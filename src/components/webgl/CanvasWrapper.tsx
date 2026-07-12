@@ -2,21 +2,27 @@
  * CanvasWrapper — client-only entry point for the WebGL layer.
  *
  * Responsibilities:
- *  - Gate the entire three.js import graph behind React.lazy so it never
- *    enters the SSR bundle.
- *  - Wrap the Canvas in an ErrorBoundary so a scene crash doesn't blank
- *    the page.
- *  - Sync viewport + performance tier + reduced-motion into the store
+ *  - Gate the entire three.js import graph behind React.lazy so it
+ *    never enters the SSR bundle.
+ *  - Wrap the Canvas in an ErrorBoundary so a scene crash doesn't
+ *    blank the page.
+ *  - Sync viewport + performance tier + reduced motion into the store
  *    once, on mount.
+ *  - Mount the tab-visibility watcher and arm audio unlock so the first
+ *    user gesture resumes the AudioContext.
  *
- * Mount from a route component inside <ClientOnly>.
+ * Mount from a route component inside <ClientOnly> — CanvasWrapper
+ * already handles that internally.
  */
 
 import { ClientOnly } from "@tanstack/react-router";
 import { Suspense, useEffect } from "react";
 
+import { audioManager } from "@/audio";
 import { ErrorBoundary } from "@/components/dom/ErrorBoundary";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
+import { useEvent } from "@/hooks/useEvent";
+import { useVisibility } from "@/hooks/useVisibility";
 import { lazyWithRetry } from "@/lib/lazy";
 import { useAppStore } from "@/store";
 import { detectHardwareTier, prefersReducedMotion } from "@/utils/detect";
@@ -48,8 +54,30 @@ function useSyncEnvironment() {
   }, [device, setViewport]);
 }
 
+function useAudioLifecycle() {
+  const setUnlocked = useAppStore((s) => s.setAudioUnlocked);
+  const isPaused = useAppStore((s) => s.isPaused);
+
+  useEffect(() => {
+    audioManager.armUnlock();
+    return () => {
+      void audioManager.dispose();
+    };
+  }, []);
+
+  useEvent("audio:unlocked", () => setUnlocked(true), [setUnlocked]);
+
+  useEffect(() => {
+    if (isPaused) void audioManager.suspend();
+    else void audioManager.resume();
+  }, [isPaused]);
+}
+
 function CanvasHost() {
   useSyncEnvironment();
+  useVisibility();
+  useAudioLifecycle();
+
   return (
     <ErrorBoundary>
       <Suspense fallback={null}>

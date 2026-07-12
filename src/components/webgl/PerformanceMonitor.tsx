@@ -1,15 +1,19 @@
 /**
  * In-canvas performance monitor.
  *
- * Samples frame delta from R3F's useFrame, and downgrades the global
- * performance tier if sustained FPS drops below a threshold. Does NOT
- * render anything visible — production HUD (if any) belongs in a
- * separate dev-only DOM overlay.
+ * Samples frame delta from R3F's useFrame, downgrades the global
+ * performance tier if sustained FPS drops below threshold, and emits a
+ * `webgl:tier-changed` event so scenes can respond (e.g. disable
+ * postprocessing, drop shadow map resolution).
+ *
+ * Renders nothing visible — a production HUD (if any) belongs in a
+ * dev-only DOM overlay.
  */
 
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 
+import { eventBus } from "@/lib/eventBus";
 import { FpsSampler } from "@/lib/performance";
 import { useAppStore } from "@/store";
 
@@ -31,9 +35,13 @@ export function PerformanceMonitor() {
     }
 
     if (belowThresholdRef.current > DOWNGRADE_HOLD_SECONDS) {
-      const tier = useAppStore.getState().performanceTier;
-      if (tier === "high") useAppStore.getState().setPerformanceTier("medium");
-      else if (tier === "medium") useAppStore.getState().setPerformanceTier("low");
+      const store = useAppStore.getState();
+      const tier = store.performanceTier;
+      const next = tier === "high" ? "medium" : tier === "medium" ? "low" : null;
+      if (next) {
+        store.setPerformanceTier(next);
+        eventBus.emit("webgl:tier-changed", { previous: tier, next });
+      }
       belowThresholdRef.current = 0;
     }
   });

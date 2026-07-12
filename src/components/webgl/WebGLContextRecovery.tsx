@@ -2,13 +2,16 @@
  * WebGL context loss / recovery handler.
  *
  * The GPU can revoke a WebGL context at any time (tab backgrounded,
- * driver reset, low memory). Without a handler, the canvas silently goes
- * black. We suppress the default (which would prevent restoration) and
- * ask R3F to remount its render loop once the context is restored.
+ * driver reset, low memory on mobile). Without a handler, the canvas
+ * silently goes black. We suppress the default (which would prevent
+ * restoration), invalidate R3F's frame loop on restore, and emit both
+ * events on the app bus so scenes / audio / UI can react.
  */
 
 import { useThree } from "@react-three/fiber";
 import { useEffect } from "react";
+
+import { eventBus } from "@/lib/eventBus";
 
 export function WebGLContextRecovery() {
   const gl = useThree((s) => s.gl);
@@ -21,10 +24,12 @@ export function WebGLContextRecovery() {
       e.preventDefault();
       // eslint-disable-next-line no-console
       console.warn("[WebGL] Context lost");
+      eventBus.emit("webgl:context-lost");
     };
     const onRestored = () => {
       // eslint-disable-next-line no-console
       console.info("[WebGL] Context restored");
+      eventBus.emit("webgl:context-restored");
       invalidate();
     };
 
