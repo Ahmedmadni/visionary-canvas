@@ -1,46 +1,45 @@
 /**
  * HeroMonolith — host for the hero shawarma model.
  *
- * The reveal is done by LIGHT, not by fading the mesh, so the model is
- * present in the graph from the first frame and simply sits in darkness
- * until the rig ignites. A subtle authored "rise" (lift + micro-scale) is
- * applied to the transform group from the `rise` channel as it emerges.
+ * The model is sourced from the production asset pipeline: `useHeroScene`
+ * returns the decoded GLB the instant it is validated + uploaded, or
+ * `null` while it is absent / loading / failed. Because the pipeline hands
+ * back a fully-ready object (no Suspense), swapping it in never flashes a
+ * half-loaded state — the scene simply transitions from lit-void to hero.
  *
- * Graceful degradation is the whole point of this file: when the hero GLB
- * is not yet committed, we render NOTHING here — no placeholder cube, no
- * procedural stand-in. The scene plays as a lit, hazy void awaiting its
- * subject, and the console notes the absence once in dev.
+ * The reveal is done by LIGHT, not by fading the mesh, so once present the
+ * model sits in darkness until the rig ignites. A subtle authored "rise"
+ * (lift + micro-scale) is applied from the `rise` channel. When the model
+ * is absent we render NOTHING here — no placeholder geometry, ever.
  */
 
-import { Suspense, useEffect, useRef } from "react";
-import type { Group } from "three";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import type { Group, Mesh } from "three";
 
 import { frameBus } from "@/lib/renderLoop";
-import { isScene01AssetReady } from "../assets";
+import { useHeroScene } from "../assets";
 import { useScene01Runtime } from "../runtime";
-import { useHeroModel } from "../hooks/useHeroModel";
 
 const BASE_Y = -0.18;
 const RISE_Y = 0.18;
 
-function HeroModel({ castShadow }: { castShadow: boolean }) {
-  const scene = useHeroModel(castShadow);
-  return <primitive object={scene} />;
-}
-
 export function HeroMonolith() {
   const { channels, budget } = useScene01Runtime();
   const groupRef = useRef<Group>(null);
-  const ready = isScene01AssetReady("hero");
+  const heroScene = useHeroScene();
 
-  useEffect(() => {
-    if (!ready && import.meta.env.DEV) {
-      console.info(
-        "[scene-01] Hero model not present — playing the lit-void fallback. " +
-          "Drop the GLB at its manifest url and flip `ready` to enable it.",
-      );
-    }
-  }, [ready]);
+  // Prepare meshes for the rig whenever a (new) model arrives.
+  useLayoutEffect(() => {
+    if (!heroScene) return;
+    heroScene.traverse((obj) => {
+      const mesh = obj as Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = budget.shadows;
+        mesh.receiveShadow = false;
+        mesh.frustumCulled = false; // single hero, always on screen
+      }
+    });
+  }, [heroScene, budget.shadows]);
 
   useEffect(() => {
     const unsubscribe = frameBus.subscribe(() => {
@@ -56,11 +55,7 @@ export function HeroMonolith() {
 
   return (
     <group ref={groupRef} position={[0, BASE_Y, 0]}>
-      {ready && (
-        <Suspense fallback={null}>
-          <HeroModel castShadow={budget.shadows} />
-        </Suspense>
-      )}
+      {heroScene && <primitive object={heroScene} />}
     </group>
   );
 }

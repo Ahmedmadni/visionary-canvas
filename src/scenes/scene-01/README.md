@@ -15,21 +15,35 @@ frame bus — no per-frame React state.
 | File | Responsibility |
 | --- | --- |
 | `config.ts` | Identity, scroll range (canonical + host-remappable), beat map, per-tier/mobile performance budget, frame-bus priorities. Pure data. |
-| `assets.ts` | Real-asset manifest with `ready` flags + graceful-missing handling. No placeholder geometry. |
 | `cameras.ts` | Authored camera keyframes (desktop + mobile framings), registered as named CameraRig presets. |
 | `timeline.ts` | The scroll-driven **GSAP** timeline. Scrubs a flat `Scene01Channels` object; pure + unit-tested. |
 | `runtime.tsx` | React context threading `channels` / `budget` / `keyframes` to subsystems without prop-drilling or re-renders. |
 | `Scene01.tsx` | Scene root (the registry's lazy default export). Wires the subsystems + per-frame drivers. |
 | `register.ts` | Registry side effect (lazy `load`, preset registration). Imported by `src/scenes/index.ts`. |
 | `hooks/useScene01Timeline.ts` | Builds + scrubs the timeline from damped scroll; reduced-motion short-circuit. |
-| `hooks/useScene01Lifecycle.ts` | Ambient-audio bed (enter/exit), degrades silently when the stem is absent. |
-| `hooks/useHeroModel.ts` | Compressed-GLB (DRACO+Meshopt) hero loader. Suspends; only mounted when present. |
+| **`assets/`** | **The production asset pipeline** — see below. |
+| `components/AssetSystem.tsx` | Binds the asset manager to the renderer, starts load + hot-load, disposes on unmount. |
 | `components/MonolithCamera.tsx` | `channels → camera` each frame (frame prio 20). |
 | `components/MonolithLighting.tsx` | Three-point rig; intensities driven by `key`/`rim` channels; budgeted contact shadows. |
-| `components/MonolithEnvironment.tsx` | Graphite background, `haze`-driven fog, reflective obsidian floor, IBL when the HDR lands. |
-| `components/HeroMonolith.tsx` | Hero host — real model or **lit-void fallback**; authored `rise`. |
+| `components/MonolithEnvironment.tsx` | Graphite background, `haze`-driven fog, reflective obsidian floor; applies HDR IBL + floor PBR maps when they decode. |
+| `components/HeroMonolith.tsx` | Hero host — pipeline-sourced model or **lit-void fallback**; authored `rise`. |
 | `components/DustField.tsx` | GPU dust particle system (bespoke shader, additive, `dust`-driven opacity). |
+| `components/MonolithAudio.tsx` | Ambient bed + spatial (HRTF) emitter, listener driven by the camera. |
 | `components/MonolithEffects.tsx` | Bloom / vignette / grain inside the tier-aware composer; bloom tracks `key`. |
+
+### `assets/` — production asset pipeline
+
+| File | Responsibility |
+| --- | --- |
+| `types.ts` | Categories, kinds, variants, specs, budgets, validation + status types. Pure. |
+| `manifest.ts` | Authoritative production manifest (every asset, desktop/mobile variants, specs, budgets, magic). Pure. |
+| `validate.ts` | Availability `probe()` + magic-byte / size `sniff()` → a verdict that never throws. |
+| `decoders.ts` | One decode path per kind (GLB·DRACO·Meshopt·KTX2 / HDR+PMREM / PBR pack / audio / spatial / video), each with `dispose()`. |
+| `store.ts` | Scene-local Zustand: per-asset status + per-category progress + hot-swap `revision`. |
+| `AssetManager.ts` | Orchestration: variant select → validate → decode → cache → mirror progress → hot-load poll → dispose. |
+| `hooks.ts` | `useHeroScene` / `useEnvironmentMap` / `useFloorMaps` / `useAudioBuffer` / `useVideoTexture` / `useCategoryProgress`. |
+| `debug.ts` | Dev-only logger (`import.meta.env.DEV` guarded — stripped in prod). |
+| `index.ts` | Public barrel + back-compat helpers. |
 
 ## Animation model
 
@@ -45,11 +59,20 @@ the camera/lights (20) and particles (30) read the channels.
 
 ## Waiting on real assets
 
-Every entry in `assets.ts` ships `ready: false`. To bring one online: drop
-the real binary at its manifest `url` under `public/`, flip `ready` to
-`true`. No other wiring changes. Until then the scene plays the honest
-lit-void fallback. Slots: hero GLB, studio HDR, obsidian floor PBR set,
-ambient drone.
+No asset binaries ship in the repo yet — by design. The `AssetManager`
+**probes each manifest URL at runtime**: present files are validated,
+decoded, and hot-swapped in; absent files leave the scene in its
+intentional lit-void fallback. There is no `ready` flag to toggle.
+
+To bring an asset online, drop the file at the `url` declared in
+`assets/manifest.ts` under `public/assets/scene-01/…`. Within one poll it
+validates and appears — no code change, no reload. Slots: hero GLB
+(desktop/mobile), studio HDR (2K/1K), obsidian floor PBR pack, ambient
+drone, spatial sizzle, and a reserved video-texture slot.
+
+**The full art-team brief — file names, resolutions, compression, poly /
+memory budgets, and Blender export settings — lives in
+[`docs/scene-01-production-asset-guide.md`](../../../docs/scene-01-production-asset-guide.md).**
 
 ## Performance & degradation
 

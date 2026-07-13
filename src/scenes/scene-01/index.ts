@@ -11,5 +11,5 @@
 import "./register";
 
 export { SCENE_01_ID, SCENE_01_CHAPTER, SCENE_01_BEATS } from "./config";
-export { SCENE_01_ASSETS, isScene01AssetReady } from "./assets";
+export { SCENE_01_MANIFEST, isScene01AssetReady, useCategoryProgress } from "./assets";
 export { scene01PresetId } from "./cameras";

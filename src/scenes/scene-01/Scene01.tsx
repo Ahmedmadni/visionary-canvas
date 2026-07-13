@@ -6,42 +6,45 @@
  * under the shared runtime and owns the per-frame drivers:
  *
  *   Scene01Provider           shared channels + budget + keyframes
+ *     ├─ AssetSystem          production asset pipeline (load/validate/hot-load)
  *     ├─ useScene01Timeline   scroll → GSAP → channels        (frame prio 10)
- *     ├─ useScene01Lifecycle  ambient audio bed
  *     ├─ MonolithCamera       channels → camera               (frame prio 20)
  *     ├─ MonolithLighting     channels → light intensities    (frame prio 20)
- *     ├─ MonolithEnvironment  fog / floor / IBL
- *     ├─ HeroMonolith         hero model (graceful) + rise
+ *     ├─ MonolithEnvironment  fog / floor / IBL (asset-driven)
+ *     ├─ HeroMonolith         hero model (asset-driven) + rise
  *     ├─ DustField            atmospheric particles           (frame prio 30)
+ *     ├─ MonolithAudio        ambient + spatial audio (asset-driven)
  *     └─ MonolithEffects      bloom / vignette / grain
  *
  * Nothing here holds animation in React state — every moving value flows
  * through the channel object and the frame bus, so the scene re-renders
- * only on structural change (tier / breakpoint), never per frame.
+ * only on structural change (tier / breakpoint / asset arrival).
  */
 
+import { AssetSystem } from "./components/AssetSystem";
 import { DustField } from "./components/DustField";
 import { HeroMonolith } from "./components/HeroMonolith";
+import { MonolithAudio } from "./components/MonolithAudio";
 import { MonolithCamera } from "./components/MonolithCamera";
 import { MonolithEffects } from "./components/MonolithEffects";
 import { MonolithEnvironment } from "./components/MonolithEnvironment";
 import { MonolithLighting } from "./components/MonolithLighting";
-import { useScene01Lifecycle } from "./hooks/useScene01Lifecycle";
 import { useScene01Timeline } from "./hooks/useScene01Timeline";
 import { Scene01Provider } from "./runtime";
 
 function Scene01Content() {
-  // Per-frame drivers (scroll scrub + audio bed). Both self-clean.
+  // Per-frame scroll scrub. Self-cleans on unmount.
   useScene01Timeline();
-  useScene01Lifecycle();
 
   return (
     <>
+      <AssetSystem />
       <MonolithCamera />
       <MonolithLighting />
       <MonolithEnvironment />
       <HeroMonolith />
       <DustField />
+      <MonolithAudio />
       <MonolithEffects />
     </>
   );

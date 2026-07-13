@@ -13,9 +13,8 @@
 
 import { registerScene } from "@/scenes";
 import { registerScene01Cameras, scene01PresetId } from "./cameras";
-import { isScene01AssetReady, scene01PreloadAssets } from "./assets";
+import { scene01PreloadAssets } from "./assets";
 import { SCENE_01_ID } from "./config";
-import { preloadHeroModel } from "./hooks/useHeroModel";
 
 registerScene01Cameras();
 
@@ -23,11 +22,8 @@ registerScene({
   id: SCENE_01_ID,
   label: "The Monolith",
   load: () => import("./Scene01"),
+  // Empty by design — the in-scene AssetManager owns validation, streaming,
+  // and hot-loading, so the registry preload step never blindly fetches.
   assets: scene01PreloadAssets(),
   camera: scene01PresetId("hero"),
-  preload: async () => {
-    // Warm the hero GLB cache ahead of mount — only when it actually
-    // exists, so we never fire a request for a missing asset.
-    if (isScene01AssetReady("hero")) preloadHeroModel();
-  },
 });
