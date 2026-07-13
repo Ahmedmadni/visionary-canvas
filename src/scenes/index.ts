@@ -18,7 +18,6 @@ const REGISTRY = new Map<SceneId, SceneDefinition>();
 
 export function registerScene(def: SceneDefinition): void {
   if (REGISTRY.has(def.id)) {
-    // eslint-disable-next-line no-console
     console.warn(`[scenes] Overwriting existing scene registration for "${def.id}"`);
   }
   REGISTRY.set(def.id, def);
@@ -43,3 +42,14 @@ export const getScene = getSceneComponent;
 export function listScenes(): SceneDefinition[] {
   return [...REGISTRY.values()];
 }
+
+/**
+ * Scene registration side effects. Each scene module self-registers on
+ * import. Kept at the BOTTOM so `registerScene` and `REGISTRY` are fully
+ * initialized before any scene calls back into this module (these are
+ * intentionally circular imports resolved by evaluation order).
+ *
+ * Add one line per scene as they ship — never import scene components
+ * eagerly here; registration uses lazy `load()` to preserve code-split.
+ */
+import "./scene-01";
