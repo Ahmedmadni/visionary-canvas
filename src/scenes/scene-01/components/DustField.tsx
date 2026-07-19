@@ -4,8 +4,13 @@
  * A single `THREE.Points` cloud with a bespoke shader: per-particle seed
  * + scale attributes, size-attenuated soft round points, additive
  * blending, and a slow parametric drift computed on the GPU (no CPU
- * per-particle work). Opacity is driven by the timeline's `dust` channel
- * so the motes only catch the light once the beams come up.
+ * per-particle work).
+ *
+ * NOT currently mounted by Scene01 — the approved reference video's air
+ * is clean (no floating dust), so this system is retired from "The
+ * Monolith" for now. Kept self-contained (an `opacity` prop instead of a
+ * dependency on Scene01Channels) so a later, moodier scene can reuse it
+ * directly. See docs/scene-01-reference-breakdown.md.
  *
  * Count scales with the performance budget; the whole system is skipped
  * when the budget allots zero particles. Geometry + material are built
@@ -95,10 +100,17 @@ function buildDustGeometry(count: number): BufferGeometry {
   return geometry;
 }
 
-export function DustField() {
-  const { channels, budget, tier } = useScene01Runtime();
+export interface DustFieldProps {
+  /** Target opacity, 0..1. Defaults to fully visible. */
+  opacity?: number;
+}
+
+export function DustField({ opacity = 1 }: DustFieldProps) {
+  const { budget, tier } = useScene01Runtime();
   const gl = useThree((s) => s.gl);
   const pointsRef = useRef<Points>(null);
+  const opacityRef = useRef(opacity);
+  opacityRef.current = opacity;
 
   const count = budget.dustCount;
 
@@ -129,10 +141,10 @@ export function DustField() {
   useEffect(() => {
     const unsubscribe = frameBus.subscribe(({ time }) => {
       material.uniforms.uTime.value = time;
-      material.uniforms.uOpacity.value = channels.current.dust;
+      material.uniforms.uOpacity.value = opacityRef.current;
     }, SCENE_01_FRAME_PRIORITY.particles);
     return unsubscribe;
-  }, [material, channels]);
+  }, [material]);
 
   // Off-graph resources: dispose explicitly on unmount.
   useEffect(() => {

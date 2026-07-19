@@ -1,7 +1,54 @@
 # Scene 01 — Reference Technical Breakdown & Implementation Plan
 
 **Reference:** `Concept_art_package_for_artist` · 10.0 s · 1920×1080 · 24 fps · H.264.
-**Status:** Analysis + plan only. **No scene code changed by this document.**
+**Status:** Analysis below is unchanged. **Phases 1–4 of the plan are now
+IMPLEMENTED** (clean-studio direction, approved) — see
+"Implementation status" immediately below. Phases 5–8 remain planning-only.
+
+## Implementation status (update)
+
+Direction lock: **clean studio look**, matching the reference — fog, dust,
+and the darkness-reveal are retired from Scene 01 (systems kept in the
+codebase, unmounted, for a future moodier scene).
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0 — Direction lock | ✅ Done | Clean-studio direction approved over the hybrid option. |
+| 1 — Timeline & camera refactor | ✅ Done | `shots.ts` (HERO + TURNAROUND, hard-cut boundary), `cameras.ts` rewritten with per-shot keyframes + authored product pose (`tiltZ`/`spinY`) traveling with the camera. |
+| 2 — Lighting overhaul | ✅ Done | `MonolithLighting.tsx` — warm-neutral key, near-white rim, broad neutral fill. `MonolithEnvironment.tsx` — fog removed, mirror floor sharpened. |
+| 3 — DOF + grade | ✅ Done | Tier-gated `DepthOfField` in `MonolithEffects.tsx`, driven by `dofFocus`/`dofBokeh`; film grain (`Noise`) dropped; vignette reduced to a static, mild value. |
+| 4 — HUD overlay | ✅ Done (v1) | DOM/CSS `hud/HudOverlay.tsx` — corner brackets, crosshair, per-shot tag + callouts. Screen-space anchors, not 3D-projected (see below). |
+| 5 — Macro shots | ⏳ Deferred | Needs no new assets in principle, but not built this pass — out of the approved Phase 1–4 scope. |
+| 6 — Exploded deconstruction | ⏳ Deferred | Blocked on a multi-part hero GLB (manifest not yet updated for it). |
+| 7 — Turnaround (full 2×2) & material board | ⏳ Deferred / simplified | See below — a **single-camera** turnaround shipped instead of the reference's 4-viewport scissor grid. |
+| 8 — Asset manifest updates | ⏳ Deferred | Follows once phases 5–7 are scheduled. |
+
+### Scoping calls made during implementation (flagged, not silent)
+
+- **Turnaround simplified to one camera.** The reference's Shot B is a 2×2
+  grid of four *simultaneous* orthographic viewports (front/left/right/rear).
+  That's a materially different R3F pattern (multiple scissored viewports in
+  one frame) than anything else in this codebase, and was explicitly called
+  out in the original plan as Phase 7 — "most documentation-flavoured,
+  confirm before building." What shipped instead: **one perspective camera**
+  with the product standing upright and a slow authored yaw (`spinY`),
+  dressed with HUD copy ("TURNAROUND", "B · SPEC VIEW") so it reads as a
+  spec-sheet pass without the 4-viewport engineering. The full grid is still
+  open to build as a dedicated follow-up.
+- **HUD anchors are screen-space, not 3D-projected.** Callout leader-lines
+  point from a label to a fixed viewport percentage, not to a projected 3D
+  point on the mesh. This matches how the reference itself reads (graphic
+  overlay, not literal object tracking) and keeps the HUD a zero-R3F-
+  dependency DOM layer. Upgrading to true 3D anchors is straightforward
+  later (project a `Vector3` through the R3F camera into screen space) but
+  wasn't needed for this shot content.
+- **Product pose (lying → standing) is a new authored transform,** not just
+  a camera move — `tiltZ`/`spinY` on the hero group, added to `cameras.ts`'s
+  keyframes so a cut snaps pose and camera together. The resting-height
+  offset for the "lying" pose (`BASE_Y_LYING` in `HeroMonolith.tsx`) is a
+  principled approximation pending the real hero GLB's bounds.
+
+Full shot-by-shot analysis and the original phased plan (unedited) follow.
 
 > **What the reference actually is.** It is a *concept / production package*,
 > not a single continuous cinematic. Over 10 s it moves through **six
