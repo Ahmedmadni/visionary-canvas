@@ -1,10 +1,15 @@
 /**
- * MonolithEnvironment — the void the hero stands in.
+ * MonolithEnvironment — the studio the hero stands in.
  *
- *  - Near-black graphite background + exponential fog whose density is
- *    driven by the timeline's `haze` channel.
- *  - A reflective obsidian floor (drei MeshReflectorMaterial) on capable
- *    tiers, degrading to a plain dark standard material on low/mobile.
+ *  - Near-black graphite background — no volumetric fog. The reference
+ *    video's air is clean; depth is read from the floor reflection and
+ *    lighting falloff alone, not haze. (The scene's old `FogExp2` +
+ *    `haze` channel were removed for the clean-studio direction — see
+ *    docs/scene-01-reference-breakdown.md.)
+ *  - A reflective obsidian floor (drei MeshReflectorMaterial) with a
+ *    CRISP mirror (low blur, high resolution) on capable tiers, matching
+ *    the reference's sharp reflection — degrading to a plain dark
+ *    standard material on low/mobile.
  *  - Image-based lighting + floor PBR maps sourced from the production
  *    asset pipeline: applied imperatively the moment they decode, with a
  *    clean restore on teardown. Until they arrive the scene runs on its
@@ -17,43 +22,28 @@
 import { MeshReflectorMaterial } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Color, FogExp2, type MeshStandardMaterial } from "three";
+import { Color, type MeshStandardMaterial } from "three";
 
-import { frameBus } from "@/lib/renderLoop";
 import { useEnvironmentMap, useFloorMaps } from "../assets";
 import { useScene01Runtime } from "../runtime";
 
-const BACKGROUND = new Color("#080a0e");
-const FOG_COLOR = new Color("#0a0c11");
+const BACKGROUND = new Color("#0c0e12");
 const FLOOR_COLOR = new Color("#05070a");
 
-const FOG_MIN = 0.028;
-const FOG_MAX = 0.14;
-
 export function MonolithEnvironment() {
-  const { channels, tier } = useScene01Runtime();
+  const { tier } = useScene01Runtime();
   const scene = useThree((s) => s.scene);
   const envMap = useEnvironmentMap();
   const floorMaps = useFloorMaps();
 
-  // Own the scene background + fog for the life of the mount; restore on exit.
+  // Own the scene background for the life of the mount; restore on exit.
   useEffect(() => {
     const prevBackground = scene.background;
-    const prevFog = scene.fog;
-    const fog = new FogExp2(FOG_COLOR.getHex(), FOG_MIN);
     scene.background = BACKGROUND;
-    scene.fog = fog;
-
-    const unsubscribe = frameBus.subscribe(() => {
-      fog.density = FOG_MIN + channels.current.haze * (FOG_MAX - FOG_MIN);
-    });
-
     return () => {
       scene.background = prevBackground;
-      scene.fog = prevFog;
-      unsubscribe();
     };
-  }, [scene, channels]);
+  }, [scene]);
 
   // Apply / restore image-based lighting when the HDR env map arrives.
   useEffect(() => {
@@ -67,7 +57,7 @@ export function MonolithEnvironment() {
 
   // Mirror floor is the single most expensive pass here — off on low tier.
   const reflective = tier !== "low";
-  const reflectorRes = tier === "high" ? 1024 : 512;
+  const reflectorRes = tier === "high" ? 1536 : 768;
 
   // Track the mounted floor material so PBR maps can be applied both when
   // they hot-load (floorMaps changes) and when the material remounts on a
@@ -90,21 +80,21 @@ export function MonolithEnvironment() {
 
   return (
     <group>
-      {/* Reflective obsidian floor. */}
+      {/* Reflective obsidian floor — crisp mirror, per the reference. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[60, 60]} />
         {reflective ? (
           <MeshReflectorMaterial
             ref={setFloorMat}
             resolution={reflectorRes}
-            mixBlur={1}
-            mixStrength={2.2}
-            blur={[420, 120]}
-            roughness={0.55}
-            depthScale={1.1}
-            minDepthThreshold={0.4}
-            maxDepthThreshold={1.3}
-            metalness={0.85}
+            mixBlur={0.35}
+            mixStrength={1.4}
+            blur={[80, 32]}
+            roughness={0.28}
+            depthScale={0.9}
+            minDepthThreshold={0.5}
+            maxDepthThreshold={1.4}
+            metalness={0.92}
             color={FLOOR_COLOR}
             mirror={0}
           />
@@ -112,8 +102,8 @@ export function MonolithEnvironment() {
           <meshStandardMaterial
             ref={setFloorMat}
             color={FLOOR_COLOR}
-            roughness={0.6}
-            metalness={0.7}
+            roughness={0.4}
+            metalness={0.8}
           />
         )}
       </mesh>

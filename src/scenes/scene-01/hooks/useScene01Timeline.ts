@@ -18,18 +18,13 @@ import { useEffect } from "react";
 
 import { frameBus, damp } from "@/lib/renderLoop";
 import { useAppStore } from "@/store";
-import { getScene01ScrollRange, SCENE_01_FRAME_PRIORITY, SCENE_01_SCRUB_HALFLIFE } from "../config";
+import {
+  resolveScene01LocalProgress,
+  SCENE_01_FRAME_PRIORITY,
+  SCENE_01_SCRUB_HALFLIFE,
+} from "../config";
 import { useScene01Runtime } from "../runtime";
 import { applyScene01Settled, buildScene01Timeline } from "../timeline";
-
-/** Clamped local progress across the scene's active page range. */
-function localProgress(scroll: number): number {
-  const { start, end } = getScene01ScrollRange();
-  const span = end - start;
-  if (span <= 0) return scroll >= end ? 1 : 0;
-  const t = (scroll - start) / span;
-  return t < 0 ? 0 : t > 1 ? 1 : t;
-}
 
 export function useScene01Timeline(): void {
   const { channels, keyframes, reducedMotion } = useScene01Runtime();
@@ -46,7 +41,7 @@ export function useScene01Timeline(): void {
     let scrubbed = 0; // damped local progress
 
     const unsubscribe = frameBus.subscribe(({ delta }) => {
-      const local = localProgress(useAppStore.getState().scrollProgress);
+      const local = resolveScene01LocalProgress(useAppStore.getState().scrollProgress);
       // Frame-rate-independent easing toward the raw scroll target adds
       // cinematic weight without decoupling from the scroll position.
       scrubbed = damp(scrubbed, local, SCENE_01_SCRUB_HALFLIFE, delta);

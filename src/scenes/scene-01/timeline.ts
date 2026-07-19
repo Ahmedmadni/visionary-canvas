@@ -11,12 +11,18 @@
  * reactivity don't mix well, and cinematic camera work is authored, not
  * derived." So we author here and apply imperatively elsewhere — no React
  * state, no re-renders, one allocation-free object mutated in place.
+ *
+ * Two independent tween groups share the one timeline:
+ *   - CAMERA + POSE, driven by the keyframe list in `cameras.ts`.
+ *   - STUDIO LIGHTING + POSTPROCESS, driven directly by the shot ranges in
+ *     `shots.ts` — a clean, mostly-lit studio look per the reference video,
+ *     with a hard-cut snap at the shot boundary (matching the camera cut).
  */
 
 import gsap from "gsap";
 
-import { SCENE_01_BEATS } from "./config";
 import type { CameraKeyframe } from "./cameras";
+import { SCENE_01_CUT_EPSILON, SCENE_01_SHOTS } from "./shots";
 
 /**
  * Every animated quantity in the scene, flattened to scalars so GSAP can
@@ -32,15 +38,16 @@ export interface Scene01Channels {
   ty: number;
   tz: number;
   fov: number;
-  // Visual drivers, all normalized 0..1.
-  reveal: number; // hero emergence from the void
-  rim: number; // cyan rim-light intensity
-  key: number; // warm key-light intensity
-  haze: number; // volumetric density
-  dust: number; // dust-field opacity
-  rise: number; // subtle hero lift/scale on reveal
-  vignette: number; // postprocessing vignette darkness
-  grade: number; // color-grade progression
+  // Product pose — travels with the camera (see cameras.ts).
+  tiltZ: number; // hero group Z-tilt, radians
+  spinY: number; // hero group Y-spin, radians
+  // Studio lighting — normalized 0..1 intensities the rig scales.
+  key: number;
+  fill: number;
+  rim: number;
+  // Postprocessing DOF (vignette is static — see MonolithEffects).
+  dofFocus: number; // world-unit focus distance driver, 0..1 normalized
+  dofBokeh: number; // 0..1 blur strength
 }
 
 export function createScene01Channels(keyframes: readonly CameraKeyframe[]): Scene01Channels {
@@ -53,14 +60,13 @@ export function createScene01Channels(keyframes: readonly CameraKeyframe[]): Sce
     ty: first.target[1],
     tz: first.target[2],
     fov: first.fov,
-    reveal: 0,
-    rim: 0,
-    key: 0,
-    haze: 1,
-    dust: 0,
-    rise: 0,
-    vignette: 1,
-    grade: 0,
+    tiltZ: first.tiltZ,
+    spinY: first.spinY,
+    key: 0.92,
+    fill: 0.85,
+    rim: 0.5,
+    dofFocus: 0.3,
+    dofBokeh: 0.55,
   };
 }
 
@@ -76,8 +82,9 @@ export function buildScene01Timeline(
 ): gsap.core.Timeline {
   const tl = gsap.timeline({ paused: true, defaults: { duration: 0 } });
 
-  // --- Camera: chained segments between keyframes, positioned on the
-  // absolute beat time so retiming a beat retimes the camera with it.
+  // --- Camera + pose: chained segments between authored keyframes. A
+  // "cut" keyframe (see cameras.ts) has a ~0 duration and ease "none", so
+  // this loop produces an instant snap for free — no special-casing.
   for (let i = 1; i < keyframes.length; i += 1) {
     const prev = keyframes[i - 1];
     const kf = keyframes[i];
@@ -93,6 +100,8 @@ export function buildScene01Timeline(
         ty: kf.target[1],
         tz: kf.target[2],
         fov: kf.fov,
+        tiltZ: kf.tiltZ,
+        spinY: kf.spinY,
         duration,
         ease: kf.ease,
       },
@@ -100,79 +109,69 @@ export function buildScene01Timeline(
     );
   }
 
-  const B = SCENE_01_BEATS;
+  // --- Studio lighting + postprocess: shot-scoped, hard-cut at the same
+  // boundary as the camera. The reference is fully lit from frame one —
+  // these are gentle settles, not a darkness reveal.
+  const [hero, turnaround] = SCENE_01_SHOTS;
+  const CUT = SCENE_01_CUT_EPSILON;
+  const cutAt = hero.end;
+  const turnaroundStart = hero.end + CUT;
+  const turnaroundSpan = Math.max(turnaround.end - turnaroundStart, 0.0001);
 
-  // --- Visual drivers. Authored against the same beat map. Positions are
-  // absolute times; durations are the gap to the next relevant beat.
+  // Key: settles in over the first fifth of the hero shot, then holds.
+  tl.to(ch, { key: 1.0, duration: hero.end * 0.2, ease: "power1.out" }, 0)
+    .to(ch, { key: 0.97, duration: hero.end * 0.8, ease: "sine.inOut" }, hero.end * 0.2)
+    .to(ch, { key: 1.0, duration: CUT, ease: "none" }, cutAt)
+    .to(ch, { key: 1.0, duration: turnaroundSpan, ease: "none" }, turnaroundStart);
 
-  // Reveal: void → silhouette at ignition, fully present by rise.
-  tl.to(ch, { reveal: 0.35, duration: B.ignition, ease: "power1.in" }, 0).to(
+  // Fill: near-constant, studio-flat — low contrast throughout.
+  tl.to(ch, { fill: 0.9, duration: hero.end, ease: "sine.inOut" }, 0).to(
     ch,
-    { reveal: 1, duration: B.rise - B.ignition, ease: "power2.out" },
-    B.ignition,
+    { fill: 0.85, duration: turnaroundSpan, ease: "sine.inOut" },
+    turnaroundStart,
   );
 
-  // Rim light ignites sharply at the ignition beat, then holds.
-  tl.to(ch, { rim: 0, duration: B.ignition, ease: "none" }, 0)
-    .to(ch, { rim: 1, duration: B.rise - B.ignition, ease: "power3.out" }, B.ignition)
-    .to(ch, { rim: 0.85, duration: B.hero - B.rise, ease: "sine.inOut" }, B.rise);
+  // Rim: gentle separation; a touch stronger once the product stands
+  // upright for the turnaround.
+  tl.to(ch, { rim: 0.5, duration: hero.end, ease: "sine.inOut" }, 0)
+    .to(ch, { rim: 0.6, duration: CUT, ease: "none" }, cutAt)
+    .to(ch, { rim: 0.6, duration: turnaroundSpan, ease: "none" }, turnaroundStart);
 
-  // Key light blooms in across the rise and holds through the hero beat.
-  tl.to(ch, { key: 0, duration: B.ignition, ease: "none" }, 0)
-    .to(ch, { key: 0.6, duration: B.orbit - B.ignition, ease: "power2.inOut" }, B.ignition)
-    .to(ch, { key: 1, duration: B.hero - B.orbit, ease: "power2.out" }, B.orbit);
-
-  // Haze is dense in the void, thins as the key light takes over.
-  tl.to(ch, { haze: 1, duration: B.rise, ease: "sine.inOut" }, 0).to(
-    ch,
-    { haze: 0.45, duration: B.hero - B.rise, ease: "power1.out" },
-    B.rise,
-  );
-
-  // Dust catches the beams from the rise onward, peaks in the orbit.
-  tl.to(ch, { dust: 0, duration: B.rise, ease: "none" }, 0)
-    .to(ch, { dust: 1, duration: B.orbit - B.rise, ease: "power1.out" }, B.rise)
-    .to(ch, { dust: 0.7, duration: B.hero - B.orbit, ease: "sine.inOut" }, B.orbit);
-
-  // Hero lift/scale — a subtle authored "breath" as it emerges.
-  tl.to(ch, { rise: 1, duration: B.orbit, ease: "power2.out" }, B.ignition);
-
-  // Vignette relaxes as the frame opens up into the hero hold.
-  tl.to(ch, { vignette: 1, duration: B.rise, ease: "sine.inOut" }, 0).to(
-    ch,
-    { vignette: 0.6, duration: B.hero - B.rise, ease: "power1.out" },
-    B.rise,
-  );
-
-  // Color grade drifts from cold void toward the warm hero balance.
-  tl.to(ch, { grade: 1, duration: B.hero, ease: "sine.inOut" }, 0);
+  // DOF: moderate shallow during the hero push-in (macro-adjacent feel),
+  // hard-cut to near-deep focus for the turnaround's spec-sheet clarity.
+  tl.to(ch, { dofFocus: 0.28, dofBokeh: 0.62, duration: hero.end, ease: "sine.inOut" }, 0)
+    .to(ch, { dofFocus: 0.52, dofBokeh: 0.14, duration: CUT, ease: "none" }, cutAt)
+    .to(
+      ch,
+      { dofFocus: 0.55, dofBokeh: 0.12, duration: turnaroundSpan, ease: "sine.inOut" },
+      turnaroundStart,
+    );
 
   return tl;
 }
 
 /**
- * Snap channels to the fully-revealed hero state without any scrub drama.
- * Used for reduced-motion, where we present the destination rather than
- * animating the whole reveal on scroll.
+ * Snap channels to the settled turnaround-end state without any scrub
+ * drama. Used for reduced-motion, where we present the destination rather
+ * than animating the whole sequence on scroll.
  */
 export function applyScene01Settled(
   ch: Scene01Channels,
   keyframes: readonly CameraKeyframe[],
 ): void {
-  const hero = keyframes[keyframes.length - 1];
-  ch.px = hero.position[0];
-  ch.py = hero.position[1];
-  ch.pz = hero.position[2];
-  ch.tx = hero.target[0];
-  ch.ty = hero.target[1];
-  ch.tz = hero.target[2];
-  ch.fov = hero.fov;
-  ch.reveal = 1;
-  ch.rim = 0.85;
-  ch.key = 1;
-  ch.haze = 0.45;
-  ch.dust = 0.7;
-  ch.rise = 1;
-  ch.vignette = 0.6;
-  ch.grade = 1;
+  const last = keyframes[keyframes.length - 1];
+  ch.px = last.position[0];
+  ch.py = last.position[1];
+  ch.pz = last.position[2];
+  ch.tx = last.target[0];
+  ch.ty = last.target[1];
+  ch.tz = last.target[2];
+  ch.fov = last.fov;
+  ch.tiltZ = last.tiltZ;
+  ch.spinY = last.spinY;
+  ch.key = 1.0;
+  ch.fill = 0.85;
+  ch.rim = 0.6;
+  ch.dofFocus = 0.55;
+  ch.dofBokeh = 0.12;
 }

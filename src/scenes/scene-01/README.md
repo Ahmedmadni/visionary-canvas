@@ -1,10 +1,13 @@
 # Scene 01 — "The Monolith"
 
-An 8–12 second cinematic reveal of a single luxury shawarma standing
-monolithic in near-darkness. The camera rises from the floor, arcs a slow
-three-quarter, and settles into a held hero portrait as a warm key light
-blooms in and cold cyan rim light carves the silhouette out of the void.
-Product-launch grammar — Apple / Porsche / Tesla.
+A clean, fully-lit **studio product-viz reveal** of a single luxury shawarma
+— matching the approved reference video (a concept-art production package).
+Two hard-cut shots: **HERO** (product lying on the floor, slow lateral drift
++ push-in, warm softbox key) then a cut into **TURNAROUND** (product snaps
+upright, slow spec-sheet yaw). A DOM/CSS technical HUD overlay (brackets,
+crosshair, callouts) rides on top. No darkness reveal, no fog, no floating
+dust — see `docs/scene-01-reference-breakdown.md` for the full technical
+director's analysis this implementation is built from.
 
 This is an **isolated, reusable production module**. It self-registers with
 the global scene registry and drives everything imperatively off the shared
@@ -14,22 +17,24 @@ frame bus — no per-frame React state.
 
 | File | Responsibility |
 | --- | --- |
-| `config.ts` | Identity, scroll range (canonical + host-remappable), beat map, per-tier/mobile performance budget, frame-bus priorities. Pure data. |
-| `cameras.ts` | Authored camera keyframes (desktop + mobile framings), registered as named CameraRig presets. |
-| `timeline.ts` | The scroll-driven **GSAP** timeline. Scrubs a flat `Scene01Channels` object; pure + unit-tested. |
+| `config.ts` | Identity, scroll range (canonical + host-remappable), shared local-progress helper, per-tier/mobile performance budget, frame-bus priorities. Pure data. |
+| `shots.ts` | The two-shot registry (HERO / TURNAROUND) — scroll ranges + the shared hard-cut epsilon. Reuses the foundation's `resolveChapter`. |
+| `cameras.ts` | Authored camera keyframes (desktop + mobile), each also carrying the product's POSE (`tiltZ`/`spinY`) so a cut snaps camera and product together. Registered as named CameraRig presets. |
+| `timeline.ts` | The scroll-driven **GSAP** timeline. Two tween groups on one timeline: camera+pose (from `cameras.ts`) and studio lighting/DOF (shot-scoped, from `shots.ts`). Scrubs a flat `Scene01Channels` object; pure + unit-tested. |
 | `runtime.tsx` | React context threading `channels` / `budget` / `keyframes` to subsystems without prop-drilling or re-renders. |
 | `Scene01.tsx` | Scene root (the registry's lazy default export). Wires the subsystems + per-frame drivers. |
 | `register.ts` | Registry side effect (lazy `load`, preset registration). Imported by `src/scenes/index.ts`. |
 | `hooks/useScene01Timeline.ts` | Builds + scrubs the timeline from damped scroll; reduced-motion short-circuit. |
 | **`assets/`** | **The production asset pipeline** — see below. |
+| **`hud/`** | **The DOM/CSS technical overlay** — see below. |
 | `components/AssetSystem.tsx` | Binds the asset manager to the renderer, starts load + hot-load, disposes on unmount. |
 | `components/MonolithCamera.tsx` | `channels → camera` each frame (frame prio 20). |
-| `components/MonolithLighting.tsx` | Three-point rig; intensities driven by `key`/`rim` channels; budgeted contact shadows. |
-| `components/MonolithEnvironment.tsx` | Graphite background, `haze`-driven fog, reflective obsidian floor; applies HDR IBL + floor PBR maps when they decode. |
-| `components/HeroMonolith.tsx` | Hero host — pipeline-sourced model or **lit-void fallback**; authored `rise`. |
-| `components/DustField.tsx` | GPU dust particle system (bespoke shader, additive, `dust`-driven opacity). |
+| `components/MonolithLighting.tsx` | Clean studio three-point rig (warm-neutral key, near-white rim, broad near-neutral fill); intensities driven by `key`/`fill`/`rim` channels; budgeted contact shadows. |
+| `components/MonolithEnvironment.tsx` | Graphite background, crisp reflective obsidian floor (no fog); applies HDR IBL + floor PBR maps when they decode. |
+| `components/HeroMonolith.tsx` | Hero host — pipeline-sourced model or **no geometry at all** when absent; applies the authored pose (`tiltZ`/`spinY`). |
+| `components/DustField.tsx` | GPU dust particle system — **not mounted** in this scene (the reference's air is clean); kept self-contained (`opacity` prop) for a later, moodier scene. |
 | `components/MonolithAudio.tsx` | Ambient bed + spatial (HRTF) emitter, listener driven by the camera. |
-| `components/MonolithEffects.tsx` | Bloom / vignette / grain inside the tier-aware composer; bloom tracks `key`. |
+| `components/MonolithEffects.tsx` | Bloom (tracks `key`) + tier-gated Depth of Field (tracks `dofFocus`/`dofBokeh`) + a static, mild vignette. No film grain. |
 
 ### `assets/` — production asset pipeline
 
@@ -45,24 +50,46 @@ frame bus — no per-frame React state.
 | `debug.ts` | Dev-only logger (`import.meta.env.DEV` guarded — stripped in prod). |
 | `index.ts` | Public barrel + back-compat helpers. |
 
+### `hud/` — technical overlay
+
+| File | Responsibility |
+| --- | --- |
+| `content.ts` | Per-shot copy + screen-space callout anchor points. Pure data. |
+| `useScene01HudState.ts` | DOM-side hook resolving the active shot from the SAME scroll store + pure helpers the in-canvas timeline uses — no R3F dependency, no bridge/portal. |
+| `HudOverlay.tsx` | The DOM/CSS component (corner brackets, crosshair, tag, callouts). Mounted OUTSIDE the Canvas, in `MonolithExperience`. Near-zero GPU cost. |
+
+Anchor points are **screen-space percentages**, not 3D-projected — a
+deliberate v1 simplification (see the "Deferred / simplified" section
+below).
+
 ## Animation model
 
 ```
-scroll (Lenis → store) ─▶ local progress (clamped to active range)
+scroll (Lenis → store) ─▶ local progress (clamped to active range, config.ts)
                        ─▶ damped (half-life) ─▶ GSAP timeline.progress()
                        ─▶ Scene01Channels (flat scalars, mutated in place)
-                       ─▶ camera / lights / fog / dust / bloom  (frame bus)
+                       ─▶ camera + pose / studio lights / DOF / bloom  (frame bus)
+
+                       (DOM, independent) ─▶ resolveScene01Shot(local)
+                                          ─▶ HudOverlay content swap
 ```
 
 Frame-bus priority ordering guarantees the timeline resolves (10) before
-the camera/lights (20) and particles (30) read the channels.
+the camera/lights (20). The HUD reads the identical scroll math on the DOM
+side via `resolveScene01LocalProgress` + `resolveScene01Shot`, so the 3D
+scene and the DOM overlay never disagree about which shot is active.
+
+A **hard cut** (camera, pose, lighting, and DOF all snapping together) is
+authored as a near-zero-duration tween segment at the shot boundary
+(`SCENE_01_CUT_EPSILON`, in `shots.ts`) — no separate transition machinery.
 
 ## Waiting on real assets
 
 No asset binaries ship in the repo yet — by design. The `AssetManager`
 **probes each manifest URL at runtime**: present files are validated,
 decoded, and hot-swapped in; absent files leave the scene in its
-intentional lit-void fallback. There is no `ready` flag to toggle.
+intentional fallback (no geometry, no textures, explicit rig only). There
+is no `ready` flag to toggle.
 
 To bring an asset online, drop the file at the `url` declared in
 `assets/manifest.ts` under `public/assets/scene-01/…`. Within one poll it
@@ -74,14 +101,29 @@ drone, spatial sizzle, and a reserved video-texture slot.
 memory budgets, and Blender export settings — lives in
 [`docs/scene-01-production-asset-guide.md`](../../../docs/scene-01-production-asset-guide.md).**
 
+Camera pose numbers (`BASE_Y_LYING` in `HeroMonolith.tsx`, `dofFocus`/
+`dofBokeh` ranges in `MonolithEffects.tsx`) are principled approximations
+pending the real hero GLB's bounds — retune once it lands.
+
 ## Performance & degradation
 
 Driven entirely by `resolveScene01Budget(tier, isMobile)`:
 
-- **high** — 2400 dust, contact shadows, 1024² mirror floor, full post.
-- **medium** — 1200 dust, shadows, 512² mirror floor, full post.
-- **low** — 400 dust, no shadows, plain floor, **no postprocessing**.
-- **mobile** — one extra clamp on top of tier (×0.4 dust, no shadows, 64²).
+- **high** — DOF on, contact shadows, 512-unit reflector budget, full post.
+- **medium** — DOF on, shadows, 256-unit reflector budget, full post.
+- **low** — DOF off, no shadows, plain floor, **no postprocessing**.
+- **mobile** — one extra clamp on top of tier (DOF off, no shadows, reflector capped).
 
-`prefers-reduced-motion` snaps to the settled hero frame and skips the
-scroll scrub entirely.
+`prefers-reduced-motion` snaps to the settled turnaround-end frame and
+skips the scroll scrub entirely (both the 3D timeline and the HUD's
+cross-fade).
+
+## Deferred / simplified (see docs/scene-01-reference-breakdown.md)
+
+- **Turnaround is a single camera**, not the reference's 2×2 orthographic
+  scissor-viewport grid — that is a materially different R3F pattern
+  (multiple simultaneous viewports) flagged as a later, dedicated phase.
+- **HUD callout anchors are screen-space**, not 3D-projected onto the mesh.
+- **Macro shots, exploded deconstruction, and the material board** are not
+  implemented — they need new assets (multi-part hero GLB, cross-section
+  variant) the production guide doesn't yet brief.

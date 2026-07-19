@@ -10,6 +10,7 @@
 
 import "./register";
 
-export { SCENE_01_ID, SCENE_01_CHAPTER, SCENE_01_BEATS } from "./config";
+export { SCENE_01_ID, SCENE_01_CHAPTER } from "./config";
+export { SCENE_01_SHOTS, resolveScene01Shot } from "./shots";
 export { SCENE_01_MANIFEST, isScene01AssetReady, useCategoryProgress } from "./assets";
 export { scene01PresetId } from "./cameras";

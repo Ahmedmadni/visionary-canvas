@@ -5,6 +5,7 @@
  * the global layers together:
  *   - <ScrollManager/>  — the single Lenis instance (publishes scroll).
  *   - <CanvasWrapper/>  — the client-only WebGL layer (fixed, full-bleed).
+ *   - <HudOverlay/>     — the scene's DOM/CSS technical overlay (no GPU cost).
  *   - <LoadingScreen/>  — fades out on `isReady`.
  *   - a tall scroll region that gives the reveal room to breathe.
  *
@@ -22,6 +23,7 @@ import { ScrollManager } from "@/components/webgl/ScrollManager";
 import { eventBus } from "@/lib/eventBus";
 import { useAppStore } from "@/store";
 import { SCENE_01_ID, setScene01ScrollRange } from "@/scenes/scene-01/config";
+import { HudOverlay } from "@/scenes/scene-01/hud/HudOverlay";
 
 // Scroll distance allotted to the reveal. Longer = slower, weightier scrub.
 const SCENE_01_SCROLL_VH = 320;
@@ -56,6 +58,7 @@ export function MonolithExperience() {
     <div className="relative w-full" style={{ backgroundColor: "#06070a" }}>
       <ScrollManager />
       <CanvasWrapper />
+      <HudOverlay />
       <LoadingScreen />
 
       {/* Accessible label for the experience (the visual title belongs to

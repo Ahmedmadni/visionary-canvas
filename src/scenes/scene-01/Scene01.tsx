@@ -8,13 +8,16 @@
  *   Scene01Provider           shared channels + budget + keyframes
  *     ├─ AssetSystem          production asset pipeline (load/validate/hot-load)
  *     ├─ useScene01Timeline   scroll → GSAP → channels        (frame prio 10)
- *     ├─ MonolithCamera       channels → camera               (frame prio 20)
- *     ├─ MonolithLighting     channels → light intensities    (frame prio 20)
- *     ├─ MonolithEnvironment  fog / floor / IBL (asset-driven)
- *     ├─ HeroMonolith         hero model (asset-driven) + rise
- *     ├─ DustField            atmospheric particles           (frame prio 30)
+ *     ├─ MonolithCamera       channels → camera + pose        (frame prio 20)
+ *     ├─ MonolithLighting     channels → studio light rig     (frame prio 20)
+ *     ├─ MonolithEnvironment  clean background / floor / IBL (asset-driven)
+ *     ├─ HeroMonolith         hero model (asset-driven), pose-driven
  *     ├─ MonolithAudio        ambient + spatial audio (asset-driven)
- *     └─ MonolithEffects      bloom / vignette / grain
+ *     └─ MonolithEffects      bloom / DOF / vignette
+ *
+ * `DustField` (atmospheric particles) is intentionally NOT mounted here —
+ * the approved reference video's air is clean. The system stays in the
+ * codebase, self-contained, for a later moodier scene.
  *
  * Nothing here holds animation in React state — every moving value flows
  * through the channel object and the frame bus, so the scene re-renders
@@ -22,7 +25,6 @@
  */
 
 import { AssetSystem } from "./components/AssetSystem";
-import { DustField } from "./components/DustField";
 import { HeroMonolith } from "./components/HeroMonolith";
 import { MonolithAudio } from "./components/MonolithAudio";
 import { MonolithCamera } from "./components/MonolithCamera";
@@ -43,7 +45,6 @@ function Scene01Content() {
       <MonolithLighting />
       <MonolithEnvironment />
       <HeroMonolith />
-      <DustField />
       <MonolithAudio />
       <MonolithEffects />
     </>
