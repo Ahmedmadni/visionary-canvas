@@ -2,7 +2,9 @@
 
 **Audience:** 3D / texture / audio artists delivering final assets.
 **Owner:** Scene 01 engineering.
-**Status:** Pipeline live. Awaiting all production assets.
+**Status:** Pipeline live. Awaiting all production assets. Direction:
+**clean studio product-viz**, per the approved reference video — see
+`docs/scene-01-reference-breakdown.md`.
 
 The runtime has a complete asset integration layer built and waiting.
 Nothing here needs an engineer once you understand the drop points: place
@@ -31,7 +33,9 @@ observed at runtime.
 public/assets/scene-01/
 ├── models/
 │   ├── hero-shawarma.desktop.glb
-│   └── hero-shawarma.mobile.glb
+│   ├── hero-shawarma.mobile.glb
+│   ├── hero-cross-section.desktop.glb
+│   └── hero-cross-section.mobile.glb
 ├── hdr/
 │   ├── studio-void.2k.hdr
 │   └── studio-void.1k.hdr
@@ -51,31 +55,79 @@ The runtime auto-selects `*.desktop.*` on desktop/tablet and `*.mobile.*`
 on phones (and clamps one extra step for thermal headroom). Deliver both;
 if only one exists the runtime will still use whatever is present.
 
+### Which shot needs which asset
+
+The scene is six hard-cut shots (A–E, with C split into two macro passes).
+Only the hero GLB and the studio HDRI/floor are needed for shots A and B,
+which are what's implemented today. The rest of this table is a look-ahead
+so delivery can be sequenced sensibly — it does not mean those shots are
+live yet (see `docs/scene-01-reference-breakdown.md` for what's built).
+
+| Shot | Needs |
+| --- | --- |
+| A — Hero / HUD beauty | Hero GLB, studio HDRI, floor PBR |
+| B — Turnaround | Hero GLB (same asset, no separate turnaround model) |
+| C1 — Macro meat | Hero GLB — the `meatBeef`/`meatChicken` parts, isolated |
+| C2 — Macro sauce | Hero GLB — the `sauce` part, isolated |
+| D — Exploded deconstruction | Hero GLB — ALL named parts, offset independently |
+| E — Material / cross-section board | **`heroCrossSection` GLB** (separate asset) |
+
 ---
 
 ## 2. Hero model — `model`
 
 The single subject. Lit by the scene rig; **do not bake lighting**.
 
+**⚠ MULTI-PART — this is a change from the original single-mesh brief.**
+The hero must be modeled and exported as **separable named nodes**, not one
+fused mesh. The exploded shot (D) offsets each part independently; the
+macro shots (C1/C2) isolate one part for a close-up. One `.glb` file,
+multiple named nodes — not multiple files.
+
 | | Desktop | Mobile |
 | --- | --- | --- |
 | **File** | `models/hero-shawarma.desktop.glb` | `models/hero-shawarma.mobile.glb` |
-| **Triangle budget** | ≤ 45,000 tris | ≤ 18,000 tris |
+| **Triangle budget** | ≤ 45,000 tris (whole assembly) | ≤ 18,000 tris |
 | **Textures** | 4K albedo · 2K normal/rough/AO | 2K albedo · 1K normal/rough/AO |
 | **Compression** | Draco L6 + Meshopt + KTX2/UASTC | Draco L6 + Meshopt + KTX2/ETC1S |
 | **Max file size** | 9 MB | 3.5 MB |
 | **GPU memory budget** | ~48 MB | ~16 MB |
 | **Format** | glTF 2.0 binary (`.glb`) | glTF 2.0 binary (`.glb`) |
 
+**Required named parts** (exact node names, case-sensitive):
+
+```
+flatbread · meatBeef · meatChicken · fries · pickles · tomato · sauce · parsley
+```
+
 **Geometry rules**
 
-- **+Y up**, single root, **origin at the base** (model sits on `y = 0`),
-  overall height ≈ **2 world units**. Face **−Z**.
-- Apply all transforms (scale = 1, rotation = 0). No empties, no cameras,
-  no lights in the file.
-- One material, **metallic-roughness** workflow. No vertex colors.
+- **+Y up**, one root object containing the 8 named part objects above —
+  each its own node, **not merged**. Origin at the base of the assembled
+  hero (`y = 0`), overall height ≈ **2 world units**. Face **−Z**.
+- Each part keeps its own local origin at its natural rest position within
+  the assembled hero. The exploded shot offsets FROM that rest position —
+  it does not compute a center, so a part placed anywhere but its correct
+  assembled location will explode from the wrong place.
+- Apply all transforms (scale = 1, rotation = 0) before export. No empties
+  beyond the root, no cameras, no lights in the file.
+- Metallic-roughness workflow. A shared material per part is fine. No
+  vertex colors.
 - Real-world scale; clean, welded normals; UVs in 0–1, no overlaps on the
   albedo set.
+
+**MACRO-READY — new requirement.** Two shots push the camera to within
+~15–25cm virtual distance of a single part (C1 on the meat, C2 on the
+sauce). At that distance:
+
+- No visible texture tiling or repeats.
+- No flat-shaded facets — subdivide or add a normal map with real
+  micro-detail (grill marks, meat striations, sauce sheen).
+- No seams on `meatBeef`, `meatChicken`, `sauce`, or `pickles` specifically
+  — these are the parts the macro shots isolate.
+- **Test each of those parts in isolation, framed as a macro close-up,
+  before delivery.** A model that reads fine at hero-shot distance can
+  fall apart under a macro lens.
 
 **Blender export settings** (File → Export → glTF 2.0)
 
@@ -98,13 +150,55 @@ gltf-transform etc1s  tmp.glb tmp2.glb --slots "!baseColor"
 gltfpack -i tmp2.glb -o hero-shawarma.desktop.glb -cc   # Meshopt, keep Draco
 ```
 
+**⚠ gltfpack node safety:** verify the output still has 8 named nodes
+(`gltf-transform inspect hero-shawarma.desktop.glb`) — some `gltfpack`
+flag combinations merge nodes with shared materials, which would silently
+break the exploded shot. If yours does, export a unique (even temporary)
+material per part before running gltfpack, or use `-kn` if your version
+supports "keep named nodes."
+
 ---
 
-## 3. Environment HDRI — `environment`
+## 3. Hero cross-section — `model` (new — Material Board shot only)
 
-Image-based lighting + floor reflections. Mostly black with one soft warm
-key and one cyan rim source. The explicit three-point rig provides most of
-the key light, so this is **fill + reflection**, not the main light.
+A **separate model** from the hero above — two halves, pre-split, showing
+the layered filling at the cut face. Used only by shot E (Material /
+Cross-Section Board). The runtime never cuts the hero GLB at runtime; this
+is authored geometry.
+
+| | Desktop | Mobile |
+| --- | --- | --- |
+| **File** | `models/hero-cross-section.desktop.glb` | `models/hero-cross-section.mobile.glb` |
+| **Triangle budget** | ≤ 40,000 tris | ≤ 16,000 tris |
+| **Textures** | 4K albedo · 2K normal/rough/AO | 2K albedo · 1K normal/rough/AO |
+| **Compression** | Draco L6 + Meshopt + KTX2/UASTC | Draco L6 + Meshopt + KTX2/ETC1S |
+| **Max file size** | 8 MB | 3 MB |
+| **GPU memory budget** | ~44 MB | ~14 MB |
+
+**Required named parts:** `leftHalf` · `rightHalf`
+
+**Rules**
+
+- Same materials/ingredient stack as the hero (flatbread / sauce / fries /
+  meat / pickles / tomato) — this must read as "the same product, cut
+  open," not a different sandwich.
+- Position both halves with a small resting gap along X, **already split**
+  — the scene does not animate a cut-open motion, the camera just holds on
+  this pre-arranged geometry.
+- Cut-face detail is the priority here (this shot exists to sell
+  ingredient quality up close) — spend the triangle/texture budget on the
+  interior faces over the outer crust.
+- Same export pipeline as the hero (see Section 2's Blender settings +
+  post-export script).
+
+---
+
+## 4. Environment HDRI — `environment`
+
+Image-based lighting + floor reflections for a **clean, bright studio
+look** — NOT a moody void. The explicit three-point studio rig (warm-
+neutral key, near-white rim, broad neutral fill) provides most of the
+light; this HDRI is fill + reflection detail, not the main light source.
 
 | | Desktop | Mobile |
 | --- | --- | --- |
@@ -117,7 +211,9 @@ the key light, so this is **fill + reflection**, not the main light.
 **Rules**
 
 - Scene-referred **linear** values, **no baked tonemap / no exposure**.
-- Peak luminance **≤ 8.0**. Keep the key disc soft (no hard sun).
+- Peak luminance **≤ 8.0**. Soft, broad light sources — a studio softbox
+  environment, not a hard point sun. No colored gels; keep it neutral so
+  it doesn't fight the rig's warm key / near-white rim.
 - The runtime pre-filters to a PMREM environment map automatically; just
   deliver a clean equirect `.hdr`.
 
@@ -127,10 +223,11 @@ RGBE `.hdr`.
 
 ---
 
-## 4. Obsidian floor PBR pack — `material`
+## 5. Obsidian floor PBR pack — `material`
 
 Tileable reflective floor. Applied to the floor material; without it the
-floor is a flat dark reflective standard material (still looks correct).
+floor is a flat dark reflective standard material (still looks correct,
+just not textured).
 
 | | Desktop | Mobile |
 | --- | --- | --- |
@@ -147,6 +244,9 @@ floor is a flat dark reflective standard material (still looks correct).
 - Color space: **albedo = sRGB**, all data maps (**normal / roughness /
   AO**) = **linear**.
 - Normal map: **OpenGL (+Y green)**. Roughness in the **R** channel.
+- The reference's floor reads as a **crisp, near-mirror surface** — keep
+  roughness LOW and even (the runtime's reflector is tuned for a sharp
+  reflection; a rough/scratched map will visibly soften it).
 - AO uses the mesh's second UV set on the hero, but the **floor plane has
   one UV set — floor AO is optional and currently not sampled**; deliver it
   for completeness / future use.
@@ -161,11 +261,23 @@ toktx --t2 --encode etc1s --clevel 4 --qlevel 128 --genmipmap --assign_oetf line
 
 ---
 
-## 5. Audio
+## 6. Material board swatches — NO new asset needed
+
+Shot E's reference shows small PBR swatch spheres alongside the
+cross-section. These are **not** a separate delivery — they're sourced
+procedurally at render time from the hero / hero-cross-section GLB's own
+material maps (small spheres rendered with the same materials). If this
+turns out to look worse than authored swatch renders once the shot is
+actually built, engineering will follow up with a dedicated ask — nothing
+to prepare for this now.
+
+---
+
+## 7. Audio
 
 | Role | File | Channels | Format | Budget | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **Ambience** (`audio`) | `audio/monolith-drone.mp3` | 48 kHz **stereo** | MP3 320 kbps (or Ogg q6) | 6 MB / ≤ 2.5 MB file | Seamless loop; swells at the ignition beat. Peak −1 dBTP, ~ −18 LUFS. |
+| **Ambience** (`audio`) | `audio/monolith-drone.mp3` | 48 kHz **stereo** | MP3 320 kbps (or Ogg q6) | 6 MB / ≤ 2.5 MB file | Seamless loop, steady bed for the whole scene. Peak −1 dBTP, ~ −18 LUFS. |
 | **Sizzle** (`audio-spatial`) | `audio/shawarma-sizzle.mp3` | 48 kHz **MONO** | MP3 256 kbps (or Ogg q5) | 3 MB / ≤ 1.5 MB file | **Must be mono** — it is HRTF-spatialized at the hero and panned by the camera. Tight seamless loop, no stereo width. |
 
 Both start only after the first user gesture (browser autoplay policy) and
@@ -173,7 +285,7 @@ loop for the scene's duration. Missing audio = silence, no error.
 
 ---
 
-## 6. Video texture — `video` (RESERVED)
+## 8. Video texture — `video` (RESERVED)
 
 The pipeline fully supports video textures, but **no surface mounts one in
 Scene 01 yet** — do not author this unless engineering requests it.
@@ -188,7 +300,7 @@ Scene 01 yet** — do not author this unless engineering requests it.
 
 ---
 
-## 7. Validation & rejection rules
+## 9. Validation & rejection rules
 
 The runtime rejects a file (and keeps the fallback) if:
 
@@ -204,25 +316,33 @@ It **warns but still loads** if:
 - File size exceeds the budget above (dev console warning).
 - The server sends an unexpected `Content-Type`.
 
+**Not yet checked automatically:** whether a GLB actually contains its
+required named parts (the list in Sections 2/3). Missing an engine-side
+check for that is a known gap (see `docs/scene-01-reference-breakdown.md`)
+— for now, verify node names yourself with `gltf-transform inspect` before
+delivery.
+
 Check the dev console (`[scene-01/assets]`) after every drop — it names the
 exact reason for any rejection.
 
 ---
 
-## 8. Total scene budget (all assets present)
+## 10. Total scene budget (all assets present)
 
 | Category | Desktop GPU/CPU | Mobile GPU/CPU |
 | --- | --- | --- |
-| Hero model | ~48 MB | ~16 MB |
+| Hero model (multi-part) | ~48 MB | ~16 MB |
+| Hero cross-section | ~44 MB | ~14 MB |
 | Environment HDRI | ~24 MB | ~6 MB |
 | Floor PBR | ~12 MB | ~3 MB |
 | Audio (ambience + sizzle) | ~9 MB | ~9 MB |
 | Video (reserved) | ~20 MB | — |
-| **Target total** | **≤ ~110 MB desktop** | **≤ ~35 MB mobile** |
+| **Target total** | **≤ ~155 MB desktop** | **≤ ~48 MB mobile** |
 
-Stay within budget so the whole 10-scene experience fits GPU memory as it
-grows. When in doubt, prioritize the hero silhouette + reflection quality;
-the void hides texture detail elsewhere.
+The cross-section model only needs to be resident while shot E is active —
+if this budget becomes a problem, engineering can dispose/reload it
+per-shot rather than holding it for the whole scene (not implemented yet;
+flag if the number above is a concern).
 
 ---
 

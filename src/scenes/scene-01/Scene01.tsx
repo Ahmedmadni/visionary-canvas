@@ -19,6 +19,13 @@
  * the approved reference video's air is clean. The system stays in the
  * codebase, self-contained, for a later moodier scene.
  *
+ * `shots.ts`/`cameras.ts`/`timeline.ts` scaffold all SIX reference shots
+ * (hero, turnaround, two macros, exploded, material board), but only hero
+ * and turnaround have a built visual treatment (hero model pose, HUD
+ * copy). The other four already drive the shared studio-lighting/DOF
+ * channels every component here already consumes — no new component is
+ * mounted for them yet. See docs/scene-01-reference-breakdown.md.
+ *
  * Nothing here holds animation in React state — every moving value flows
  * through the channel object and the frame bus, so the scene re-renders
  * only on structural change (tier / breakpoint / asset arrival).
