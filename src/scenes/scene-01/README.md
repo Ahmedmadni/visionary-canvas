@@ -2,12 +2,26 @@
 
 A clean, fully-lit **studio product-viz reveal** of a single luxury shawarma
 — matching the approved reference video (a concept-art production package).
-Two hard-cut shots: **HERO** (product lying on the floor, slow lateral drift
-+ push-in, warm softbox key) then a cut into **TURNAROUND** (product snaps
-upright, slow spec-sheet yaw). A DOM/CSS technical HUD overlay (brackets,
-crosshair, callouts) rides on top. No darkness reveal, no fog, no floating
-dust — see `docs/scene-01-reference-breakdown.md` for the full technical
-director's analysis this implementation is built from.
+Six hard-cut shots, camera-and-timeline-complete:
+
+| Shot | What it is | Visual treatment |
+| --- | --- | --- |
+| **A — hero** | Product lying on the floor, slow lateral drift + push-in | ✅ Built (hero model, pose, HUD) |
+| **B — turnaround** | Product snaps upright, slow spec-sheet yaw | ✅ Built (single-camera simplification — see below) |
+| **C1 — macroMeat** | Extreme close push on the grilled meat | 🚧 Camera + timeline only |
+| **C2 — macroSauce** | Extreme close push on the sauce / veg | 🚧 Camera + timeline only |
+| **D — exploded** | Camera pulls back for the (future) floating ingredient stack | 🚧 Camera + timeline only |
+| **E — materialBoard** | Near-locked on the (future) cross-section halves | 🚧 Camera + timeline only |
+
+Every shot drives the shared studio-lighting/DOF channels and hard-cuts
+cleanly into the next (camera, product pose, lighting, and DOF all snap
+together — see "Animation model" below). Shots C1–E have no dedicated
+visual component yet — no macro effects, no exploded-part offsetting, no
+cross-section rendering, no HUD copy — they're waiting on the multi-part
+hero GLB and cross-section asset (see
+`docs/scene-01-production-asset-guide.md`). No darkness reveal, no fog, no
+floating dust anywhere — see `docs/scene-01-reference-breakdown.md` for the
+full technical director's analysis this implementation is built from.
 
 This is an **isolated, reusable production module**. It self-registers with
 the global scene registry and drives everything imperatively off the shared
@@ -18,9 +32,9 @@ frame bus — no per-frame React state.
 | File | Responsibility |
 | --- | --- |
 | `config.ts` | Identity, scroll range (canonical + host-remappable), shared local-progress helper, per-tier/mobile performance budget, frame-bus priorities. Pure data. |
-| `shots.ts` | The two-shot registry (HERO / TURNAROUND) — scroll ranges + the shared hard-cut epsilon. Reuses the foundation's `resolveChapter`. |
-| `cameras.ts` | Authored camera keyframes (desktop + mobile), each also carrying the product's POSE (`tiltZ`/`spinY`) so a cut snaps camera and product together. Registered as named CameraRig presets. |
-| `timeline.ts` | The scroll-driven **GSAP** timeline. Two tween groups on one timeline: camera+pose (from `cameras.ts`) and studio lighting/DOF (shot-scoped, from `shots.ts`). Scrubs a flat `Scene01Channels` object; pure + unit-tested. |
+| `shots.ts` | The six-shot registry (A–E) — scroll ranges + the shared hard-cut epsilon. Reuses the foundation's `resolveChapter`. |
+| `cameras.ts` | Authored camera keyframes (desktop + mobile) for all six shots, each also carrying the product's POSE (`tiltZ`/`spinY`) so a cut snaps camera and product together. Registered as named CameraRig presets. |
+| `timeline.ts` | The scroll-driven **GSAP** timeline. Two tween groups on one timeline: camera+pose (from `cameras.ts`) and studio lighting/DOF — a per-shot `SHOT_VISUALS` lookup, generic over ALL of `shots.ts` (add a shot + a lookup entry, nothing else changes). Scrubs a flat `Scene01Channels` object; pure + unit-tested. |
 | `runtime.tsx` | React context threading `channels` / `budget` / `keyframes` to subsystems without prop-drilling or re-renders. |
 | `Scene01.tsx` | Scene root (the registry's lazy default export). Wires the subsystems + per-frame drivers. |
 | `register.ts` | Registry side effect (lazy `load`, preset registration). Imported by `src/scenes/index.ts`. |
@@ -41,7 +55,7 @@ frame bus — no per-frame React state.
 | File | Responsibility |
 | --- | --- |
 | `types.ts` | Categories, kinds, variants, specs, budgets, validation + status types. Pure. |
-| `manifest.ts` | Authoritative production manifest (every asset, desktop/mobile variants, specs, budgets, magic). Pure. |
+| `manifest.ts` | Authoritative production manifest (every asset, desktop/mobile variants, specs, budgets, magic). Hero is a MULTI-PART GLB — `SCENE_01_HERO_PARTS` lists the 8 required named nodes. `heroCrossSection` is a separate multi-part asset (`SCENE_01_CROSS_SECTION_PARTS`) for shot E only. Pure. |
 | `validate.ts` | Availability `probe()` + magic-byte / size `sniff()` → a verdict that never throws. |
 | `decoders.ts` | One decode path per kind (GLB·DRACO·Meshopt·KTX2 / HDR+PMREM / PBR pack / audio / spatial / video), each with `dispose()`. |
 | `store.ts` | Scene-local Zustand: per-asset status + per-category progress + hot-swap `revision`. |
@@ -54,7 +68,7 @@ frame bus — no per-frame React state.
 
 | File | Responsibility |
 | --- | --- |
-| `content.ts` | Per-shot copy + screen-space callout anchor points. Pure data. |
+| `content.ts` | Per-shot copy + screen-space callout anchor points. Only HERO and TURNAROUND have entries — `SCENE_01_HUD_CONTENT` is a `Partial<Record<...>>` and `HudOverlay` renders nothing for a shot without content (deliberate, not a placeholder). Pure data. |
 | `useScene01HudState.ts` | DOM-side hook resolving the active shot from the SAME scroll store + pure helpers the in-canvas timeline uses — no R3F dependency, no bridge/portal. |
 | `HudOverlay.tsx` | The DOM/CSS component (corner brackets, crosshair, tag, callouts). Mounted OUTSIDE the Canvas, in `MonolithExperience`. Near-zero GPU cost. |
 
@@ -94,8 +108,11 @@ is no `ready` flag to toggle.
 To bring an asset online, drop the file at the `url` declared in
 `assets/manifest.ts` under `public/assets/scene-01/…`. Within one poll it
 validates and appears — no code change, no reload. Slots: hero GLB
-(desktop/mobile), studio HDR (2K/1K), obsidian floor PBR pack, ambient
-drone, spatial sizzle, and a reserved video-texture slot.
+(desktop/mobile, **multi-part** — see `SCENE_01_HERO_PARTS`), hero
+cross-section GLB (desktop/mobile, **multi-part** — see
+`SCENE_01_CROSS_SECTION_PARTS`, shot E only), studio HDR (2K/1K), obsidian
+floor PBR pack, ambient drone, spatial sizzle, and a reserved
+video-texture slot.
 
 **The full art-team brief — file names, resolutions, compression, poly /
 memory budgets, and Blender export settings — lives in
@@ -124,6 +141,13 @@ cross-fade).
   scissor-viewport grid — that is a materially different R3F pattern
   (multiple simultaneous viewports) flagged as a later, dedicated phase.
 - **HUD callout anchors are screen-space**, not 3D-projected onto the mesh.
-- **Macro shots, exploded deconstruction, and the material board** are not
-  implemented — they need new assets (multi-part hero GLB, cross-section
-  variant) the production guide doesn't yet brief.
+- **HUD copy for C1/C2/D/E is not written** — `HudOverlay` renders nothing
+  for those shots (deliberate, not a placeholder).
+- **Macro shots (C1/C2), exploded deconstruction (D), and the material
+  board (E) have camera + timeline scaffolding only** — no macro-specific
+  visual effects (e.g. the sauce-pour motion), no exploded-part
+  offsetting, no cross-section rendering. They need the multi-part hero
+  GLB and the `heroCrossSection` asset, both now fully briefed in
+  `docs/scene-01-production-asset-guide.md`, PLUS new components
+  (`MacroRig`/`SaucePour`, `ExplodedRig`, `MaterialBoard`) that don't
+  exist yet.

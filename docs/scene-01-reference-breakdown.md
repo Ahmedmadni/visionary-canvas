@@ -1,9 +1,11 @@
 # Scene 01 — Reference Technical Breakdown & Implementation Plan
 
 **Reference:** `Concept_art_package_for_artist` · 10.0 s · 1920×1080 · 24 fps · H.264.
-**Status:** Analysis below is unchanged. **Phases 1–4 of the plan are now
-IMPLEMENTED** (clean-studio direction, approved) — see
-"Implementation status" immediately below. Phases 5–8 remain planning-only.
+**Status:** Analysis below is unchanged. **Phases 0–4 of the plan are now
+IMPLEMENTED** (clean-studio direction, approved; camera + timeline now
+scaffold all SIX reference shots, not just two) — see "Implementation
+status" immediately below. Phases 5–7's VISUAL content remains
+planning-only; Phase 8 (asset manifest) is done.
 
 ## Implementation status (update)
 
@@ -13,15 +15,15 @@ codebase, unmounted, for a future moodier scene).
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| 0 — Direction lock | ✅ Done | Clean-studio direction approved over the hybrid option. |
-| 1 — Timeline & camera refactor | ✅ Done | `shots.ts` (HERO + TURNAROUND, hard-cut boundary), `cameras.ts` rewritten with per-shot keyframes + authored product pose (`tiltZ`/`spinY`) traveling with the camera. |
+| 0 — Direction lock | ✅ Done | Clean-studio direction approved over the hybrid option. Doc comments across `config.ts`/`shots.ts`/`cameras.ts`/`Scene01.tsx` reconciled to the six-shot structure. |
+| 1 — Timeline & camera refactor | ✅ Done, now ALL 6 shots | `shots.ts` extended to A/B/C1/C2/D/E with contiguous scroll ranges + hard-cut boundaries. `cameras.ts` carries authored keyframes + pose (`tiltZ`/`spinY`) for all six (desktop+mobile). `timeline.ts`'s studio-lighting/DOF authoring generalized from a hard-coded hero/turnaround pair into a `SHOT_VISUALS` lookup generic over the whole shot list — adding a shot needs one array entry + one lookup entry, nothing else. |
 | 2 — Lighting overhaul | ✅ Done | `MonolithLighting.tsx` — warm-neutral key, near-white rim, broad neutral fill. `MonolithEnvironment.tsx` — fog removed, mirror floor sharpened. |
-| 3 — DOF + grade | ✅ Done | Tier-gated `DepthOfField` in `MonolithEffects.tsx`, driven by `dofFocus`/`dofBokeh`; film grain (`Noise`) dropped; vignette reduced to a static, mild value. |
-| 4 — HUD overlay | ✅ Done (v1) | DOM/CSS `hud/HudOverlay.tsx` — corner brackets, crosshair, per-shot tag + callouts. Screen-space anchors, not 3D-projected (see below). |
-| 5 — Macro shots | ⏳ Deferred | Needs no new assets in principle, but not built this pass — out of the approved Phase 1–4 scope. |
-| 6 — Exploded deconstruction | ⏳ Deferred | Blocked on a multi-part hero GLB (manifest not yet updated for it). |
-| 7 — Turnaround (full 2×2) & material board | ⏳ Deferred / simplified | See below — a **single-camera** turnaround shipped instead of the reference's 4-viewport scissor grid. |
-| 8 — Asset manifest updates | ⏳ Deferred | Follows once phases 5–7 are scheduled. |
+| 3 — DOF + grade | ✅ Done | Tier-gated `DepthOfField` in `MonolithEffects.tsx`, driven by `dofFocus`/`dofBokeh`; film grain (`Noise`) dropped; vignette reduced to a static, mild value. Macro shots (C1/C2) now author a punchier, shallower DOF/lighting hold than hero/turnaround. |
+| 4 — HUD overlay | ✅ Done (v1), scoped to A/B | DOM/CSS `hud/HudOverlay.tsx` — corner brackets, crosshair, per-shot tag + callouts. `SCENE_01_HUD_CONTENT` is now a `Partial` map; C1/C2/D/E have no entry and the overlay renders nothing for them (deliberate, not a placeholder — "final HUD" for those shots is explicitly out of scope). |
+| 5 — Macro shots (visual) | ⏳ Deferred | Camera + timeline framing exists (C1/C2 in `cameras.ts`/`timeline.ts`); no `MacroRig`, no sauce-pour effect, no macro-specific component. |
+| 6 — Exploded deconstruction (visual) | ⏳ Deferred | Camera + timeline framing exists (shot D); no `ExplodedRig`, no per-part offsetting. No longer blocked on the manifest — the hero GLB is now briefed as multi-part (`SCENE_01_HERO_PARTS`, 8 named nodes) — but the ASSET still doesn't exist, and neither does the component that would consume it. |
+| 7 — Turnaround (full 2×2) & material board (visual) | ⏳ Deferred / simplified | Turnaround: a **single-camera** simplification shipped instead of the reference's 4-viewport scissor grid (unchanged from before). Material board: camera + timeline framing exists (shot E); no `MaterialBoard` component, and its asset (`heroCrossSection`) doesn't exist yet either — but is now fully briefed. |
+| 8 — Asset manifest updates | ✅ Done | `manifest.ts`: hero is now multi-part (`requiredParts`), new `heroCrossSection` entry (its own `requiredParts`), macro-readiness export notes. `types.ts` gained `Scene01AssetDef.requiredParts`. Production Asset Guide fully rewritten for both. |
 
 ### Scoping calls made during implementation (flagged, not silent)
 
@@ -47,6 +49,22 @@ codebase, unmounted, for a future moodier scene).
   keyframes so a cut snaps pose and camera together. The resting-height
   offset for the "lying" pose (`BASE_Y_LYING` in `HeroMonolith.tsx`) is a
   principled approximation pending the real hero GLB's bounds.
+- **Camera + timeline scaffolding shipped for all six shots at once,**
+  rather than adding shots one at a time as their visual components get
+  built. This was a deliberate call: the reference's per-shot camera
+  language (lens, DOF, lighting mood) is fully specified in the breakdown
+  below, so authoring it now — while generalizing `timeline.ts`'s
+  lighting/DOF tweening from a hard-coded pair into a `SHOT_VISUALS`
+  lookup — is strictly additive groundwork. It does NOT imply the macro/
+  exploded/material shots are visually built; see the phase table above.
+- **The exploded shot no longer needs a new binary asset**, just a richer
+  brief on the existing hero GLB: it must ship as 8 named nodes
+  (`SCENE_01_HERO_PARTS`) instead of one fused mesh. `Scene01AssetDef`
+  gained a typed `requiredParts` field so this is a structural manifest
+  fact, not just prose in `exportNotes`. The material board DOES need a
+  new asset (`heroCrossSection`, itself multi-part: `leftHalf`/
+  `rightHalf`) since cutting the hero open is authored geometry, not
+  something the runtime can compute.
 
 Full shot-by-shot analysis and the original phased plan (unedited) follow.
 

@@ -15,6 +15,12 @@
  * reference is authored for 16:9 (see docs/scene-01-reference-
  * breakdown.md, "HUD text legibility across breakpoints").
  *
+ * `shots.ts` lists six shots; `content.ts` only has copy for HERO and
+ * TURNAROUND. For any other active shot this renders NOTHING — not a
+ * placeholder — matching the rest of the scene's "absent means absent"
+ * convention. Finalizing the HUD for the other four shots is deliberately
+ * out of scope for this pass.
+ *
  * Anchor points are screen-space percentages, not 3D-projected — see the
  * note in `content.ts` for why, and what upgrading this would take.
  */
@@ -63,9 +69,9 @@ function CalloutRow({ callout }: { callout: HudCallout }) {
 export function HudOverlay() {
   const { active, shotId, reducedMotion } = useScene01HudState();
 
-  if (!active || !shotId) return null;
+  const content = shotId ? SCENE_01_HUD_CONTENT[shotId] : undefined;
+  if (!active || !shotId || !content) return null;
 
-  const content = SCENE_01_HUD_CONTENT[shotId];
   const fadeClass = reducedMotion ? "" : "animate-in fade-in duration-700";
 
   return (

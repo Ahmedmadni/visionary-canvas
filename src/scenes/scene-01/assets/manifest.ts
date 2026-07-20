@@ -21,6 +21,32 @@ import type { Scene01AssetDef, Scene01VariantId } from "./types";
 /** Root under `public/` for all Scene 01 assets. */
 export const SCENE_01_ASSET_ROOT = "/assets/scene-01";
 
+/**
+ * Required named nodes/meshes inside the hero GLB. The hero is NOT a
+ * single fused mesh — it must be modeled and exported as separable parts
+ * so the (future) exploded-deconstruction shot (D) can offset each one
+ * independently, and so macro shots (C1/C2) can isolate a part for a
+ * close-up without depending on where the camera happens to clip the
+ * combined silhouette. One file, multiple named nodes — not multiple
+ * files.
+ */
+export const SCENE_01_HERO_PARTS = [
+  "flatbread",
+  "meatBeef",
+  "meatChicken",
+  "fries",
+  "pickles",
+  "tomato",
+  "sauce",
+  "parsley",
+] as const;
+
+/**
+ * Required named nodes inside the cross-section variant — the two halves
+ * the material board (shot E) splays open to show the cut faces.
+ */
+export const SCENE_01_CROSS_SECTION_PARTS = ["leftHalf", "rightHalf"] as const;
+
 // Common magic signatures (ASCII where the format is text-headed).
 const MAGIC = {
   glb: ["676c5446"], // "glTF"
@@ -39,14 +65,20 @@ export const SCENE_01_MANIFEST: readonly Scene01AssetDef[] = [
     category: "model",
     kind: "glb",
     description:
-      "Hero shawarma — the single subject of the scene. Y-up, origin at the base, ~2u tall.",
+      "Hero shawarma — the single subject of the scene. Y-up, origin at the base, ~2u tall. " +
+      "MULTI-PART: modeled and exported as separable named nodes (see `requiredParts`), NOT a " +
+      "single fused mesh — the exploded-deconstruction shot offsets each part independently, " +
+      "and macro shots isolate one part for a close-up.",
     optional: true,
+    requiredParts: SCENE_01_HERO_PARTS,
     exportNotes: [
-      "Blender → glTF 2.0 (.glb), +Y up, apply all transforms, single root.",
+      "Blender → glTF 2.0 (.glb), +Y up, apply all transforms, ONE root empty containing the named part objects listed in `requiredParts` (flatbread, meatBeef, meatChicken, fries, pickles, tomato, sauce, parsley) — each its own object/node, not merged.",
+      "Each part keeps its OWN local origin at its natural rest position within the assembled hero — the exploded shot offsets from there, it does not need to compute a center.",
       "Compression: Draco (mesh) at compression level 6, quantize POS 14 / NORM 10 / UV 12.",
       "Bake PBR to KTX2/UASTC; do NOT ship PNG/JPG textures inside the GLB.",
-      "One material, metallic-roughness workflow; no vertex colors.",
-      "Meshopt-optimize after Draco (gltfpack -cc) for interleaved, quantized streams.",
+      "Metallic-roughness workflow; a shared material per part is fine, no vertex colors.",
+      "Meshopt-optimize after Draco (gltfpack -cc) for interleaved, quantized streams — verify gltfpack preserves the named-node hierarchy (do NOT let it merge nodes).",
+      "MACRO-READY: model and texture density must hold up at extreme close-up (camera ~15-25cm virtual distance) — no visible tiling, no flat-shaded facets, no seams on the meat/sauce/pickle parts. Test each part in isolation at macro framing before delivery.",
     ],
     variants: [
       {
@@ -73,6 +105,57 @@ export const SCENE_01_MANIFEST: readonly Scene01AssetDef[] = [
           triangleBudget: 18000,
           memoryBudgetMb: 16,
           maxFileSizeMb: 3.5,
+        },
+        validation: {
+          magic: [...MAGIC.glb],
+          contentTypes: ["model/gltf-binary", "application/octet-stream"],
+        },
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------- CROSS-SECTION
+  {
+    role: "heroCrossSection",
+    category: "model",
+    kind: "glb",
+    description:
+      "Cross-section variant of the hero — two halves, cut open to show the layered filling. " +
+      "Used ONLY by the material board shot (E); the hero's own GLB is never cut at runtime.",
+    optional: true,
+    requiredParts: SCENE_01_CROSS_SECTION_PARTS,
+    exportNotes: [
+      "A SEPARATE sculpt/model from the hero — do not attempt to boolean-cut the hero GLB at runtime.",
+      "Two named nodes under one root: `leftHalf`, `rightHalf`. Each keeps the layered filling visible at the cut face (matches the hero's actual ingredient stack — flatbread / sauce / fries / meat / pickles / tomato, same materials).",
+      "Position both halves pre-split with a small resting gap along X, already reading as intentionally opened (the camera does not animate the split — see shots.ts shot E).",
+      "Same export pipeline as the hero: glTF 2.0 binary, Draco L6, KTX2/UASTC, Meshopt.",
+      "Cut-face detail matters more than the outer crust here — this shot exists to sell ingredient quality up close.",
+    ],
+    variants: [
+      {
+        id: "desktop",
+        url: `${SCENE_01_ASSET_ROOT}/models/hero-cross-section.desktop.glb`,
+        spec: {
+          resolution: "4K albedo / 2K normal-roughness-ao",
+          compression: "Draco L6 + Meshopt + KTX2/UASTC",
+          triangleBudget: 40000,
+          memoryBudgetMb: 44,
+          maxFileSizeMb: 8,
+        },
+        validation: {
+          magic: [...MAGIC.glb],
+          contentTypes: ["model/gltf-binary", "application/octet-stream"],
+        },
+      },
+      {
+        id: "mobile",
+        url: `${SCENE_01_ASSET_ROOT}/models/hero-cross-section.mobile.glb`,
+        spec: {
+          resolution: "2K albedo / 1K normal-roughness-ao",
+          compression: "Draco L6 + Meshopt + KTX2/ETC1S",
+          triangleBudget: 16000,
+          memoryBudgetMb: 14,
+          maxFileSizeMb: 3,
         },
         validation: {
           magic: [...MAGIC.glb],

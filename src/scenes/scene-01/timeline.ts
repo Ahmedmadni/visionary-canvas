@@ -14,15 +14,24 @@
  *
  * Two independent tween groups share the one timeline:
  *   - CAMERA + POSE, driven by the keyframe list in `cameras.ts`.
- *   - STUDIO LIGHTING + POSTPROCESS, driven directly by the shot ranges in
- *     `shots.ts` — a clean, mostly-lit studio look per the reference video,
- *     with a hard-cut snap at the shot boundary (matching the camera cut).
+ *   - STUDIO LIGHTING + POSTPROCESS, driven by a per-shot lookup
+ *     (`SHOT_VISUALS`) generic over ALL of `shots.ts` — each shot settles
+ *     into its authored values once, then holds flat for the rest of its
+ *     span, snapping at the next shot's cut. This is what "keep the
+ *     system modular so each shot can be independently tuned" means in
+ *     practice: retiming or adding a shot never touches this loop, only
+ *     `SCENE_01_SHOTS` and `SHOT_VISUALS`.
  */
 
 import gsap from "gsap";
 
 import type { CameraKeyframe } from "./cameras";
-import { SCENE_01_CUT_EPSILON, SCENE_01_SHOTS } from "./shots";
+import {
+  SCENE_01_CUT_EPSILON,
+  SCENE_01_SHOTS,
+  type Scene01Shot,
+  type Scene01ShotId,
+} from "./shots";
 
 /**
  * Every animated quantity in the scene, flattened to scalars so GSAP can
@@ -49,6 +58,28 @@ export interface Scene01Channels {
   dofFocus: number; // world-unit focus distance driver, 0..1 normalized
   dofBokeh: number; // 0..1 blur strength
 }
+
+/** The subset of channels a shot's studio-lighting/DOF settle targets. */
+type ShotVisuals = Pick<Scene01Channels, "key" | "fill" | "rim" | "dofFocus" | "dofBokeh">;
+
+/**
+ * Per-shot authored HOLD values. Each shot eases in to these once (or
+ * snaps, if it's a hard cut) and holds them flat for the rest of its
+ * span — the reference is a series of held studio setups, not a
+ * continuously drifting grade. Add a shot to `shots.ts` and a matching
+ * entry here; nothing else needs to change.
+ */
+const SHOT_VISUALS: Record<Scene01ShotId, ShotVisuals> = {
+  hero: { key: 1.0, fill: 0.9, rim: 0.5, dofFocus: 0.28, dofBokeh: 0.62 },
+  turnaround: { key: 1.0, fill: 0.85, rim: 0.6, dofFocus: 0.52, dofBokeh: 0.14 },
+  // Punchier raking light + very shallow DOF — the macro passes are the
+  // one place this "clean studio" scene leans into contrast and bokeh.
+  macroMeat: { key: 1.0, fill: 0.7, rim: 0.7, dofFocus: 0.05, dofBokeh: 0.95 },
+  macroSauce: { key: 1.0, fill: 0.72, rim: 0.68, dofFocus: 0.06, dofBokeh: 0.92 },
+  // Back to flat studio readability — the stack needs to stay legible.
+  exploded: { key: 1.0, fill: 0.85, rim: 0.6, dofFocus: 0.5, dofBokeh: 0.35 },
+  materialBoard: { key: 1.0, fill: 0.88, rim: 0.55, dofFocus: 0.5, dofBokeh: 0.22 },
+};
 
 export function createScene01Channels(keyframes: readonly CameraKeyframe[]): Scene01Channels {
   const first = keyframes[0];
@@ -109,49 +140,28 @@ export function buildScene01Timeline(
     );
   }
 
-  // --- Studio lighting + postprocess: shot-scoped, hard-cut at the same
-  // boundary as the camera. The reference is fully lit from frame one —
-  // these are gentle settles, not a darkness reveal.
-  const [hero, turnaround] = SCENE_01_SHOTS;
-  const CUT = SCENE_01_CUT_EPSILON;
-  const cutAt = hero.end;
-  const turnaroundStart = hero.end + CUT;
-  const turnaroundSpan = Math.max(turnaround.end - turnaroundStart, 0.0001);
+  // --- Studio lighting + DOF: one settle-then-hold segment per shot,
+  // generic over the whole shot list. A "cut" shot snaps instantly
+  // (near-zero settle, no ease); the opening shot eases in gently since
+  // there is nothing to cut from.
+  for (const shot of SCENE_01_SHOTS as readonly Scene01Shot[]) {
+    const target = SHOT_VISUALS[shot.id];
+    const span = Math.max(shot.end - shot.start, 0.0001);
+    const settleDuration = Math.min(SCENE_01_CUT_EPSILON * 2, span * 0.3);
+    const settleEase = shot.transitionIn === "cut" ? "none" : "power1.out";
 
-  // Key: settles in over the first fifth of the hero shot, then holds.
-  tl.to(ch, { key: 1.0, duration: hero.end * 0.2, ease: "power1.out" }, 0)
-    .to(ch, { key: 0.97, duration: hero.end * 0.8, ease: "sine.inOut" }, hero.end * 0.2)
-    .to(ch, { key: 1.0, duration: CUT, ease: "none" }, cutAt)
-    .to(ch, { key: 1.0, duration: turnaroundSpan, ease: "none" }, turnaroundStart);
-
-  // Fill: near-constant, studio-flat — low contrast throughout.
-  tl.to(ch, { fill: 0.9, duration: hero.end, ease: "sine.inOut" }, 0).to(
-    ch,
-    { fill: 0.85, duration: turnaroundSpan, ease: "sine.inOut" },
-    turnaroundStart,
-  );
-
-  // Rim: gentle separation; a touch stronger once the product stands
-  // upright for the turnaround.
-  tl.to(ch, { rim: 0.5, duration: hero.end, ease: "sine.inOut" }, 0)
-    .to(ch, { rim: 0.6, duration: CUT, ease: "none" }, cutAt)
-    .to(ch, { rim: 0.6, duration: turnaroundSpan, ease: "none" }, turnaroundStart);
-
-  // DOF: moderate shallow during the hero push-in (macro-adjacent feel),
-  // hard-cut to near-deep focus for the turnaround's spec-sheet clarity.
-  tl.to(ch, { dofFocus: 0.28, dofBokeh: 0.62, duration: hero.end, ease: "sine.inOut" }, 0)
-    .to(ch, { dofFocus: 0.52, dofBokeh: 0.14, duration: CUT, ease: "none" }, cutAt)
-    .to(
+    tl.to(ch, { ...target, duration: settleDuration, ease: settleEase }, shot.start).to(
       ch,
-      { dofFocus: 0.55, dofBokeh: 0.12, duration: turnaroundSpan, ease: "sine.inOut" },
-      turnaroundStart,
+      { ...target, duration: Math.max(span - settleDuration, 0.0001), ease: "none" },
+      shot.start + settleDuration,
     );
+  }
 
   return tl;
 }
 
 /**
- * Snap channels to the settled turnaround-end state without any scrub
+ * Snap channels to the settled end-of-sequence state without any scrub
  * drama. Used for reduced-motion, where we present the destination rather
  * than animating the whole sequence on scroll.
  */
@@ -169,9 +179,7 @@ export function applyScene01Settled(
   ch.fov = last.fov;
   ch.tiltZ = last.tiltZ;
   ch.spinY = last.spinY;
-  ch.key = 1.0;
-  ch.fill = 0.85;
-  ch.rim = 0.6;
-  ch.dofFocus = 0.55;
-  ch.dofBokeh = 0.12;
+
+  const lastShot = SCENE_01_SHOTS[SCENE_01_SHOTS.length - 1];
+  Object.assign(ch, SHOT_VISUALS[lastShot.id]);
 }

@@ -95,6 +95,16 @@ export interface Scene01AssetDef {
   exportNotes: string[];
   /** At least one; ordered by preference. */
   variants: Scene01AssetVariant[];
+  /**
+   * For multi-part GLBs (`kind: "glb"` only): the named nodes/meshes
+   * consumers must be able to address individually — e.g. the exploded-
+   * deconstruction shot offsetting each ingredient, or a cross-section
+   * asset's two halves. Undefined for single-mesh models and non-model
+   * assets. Documented for the art team AND consumed by future decode-
+   * time validation (not yet implemented — see docs/scene-01-reference-
+   * breakdown.md phase 6).
+   */
+  requiredParts?: readonly string[];
 }
 
 /** Runtime lifecycle state of one asset. */

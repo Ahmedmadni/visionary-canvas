@@ -14,6 +14,8 @@ export * from "./types";
 export {
   SCENE_01_MANIFEST,
   SCENE_01_ASSET_ROOT,
+  SCENE_01_HERO_PARTS,
+  SCENE_01_CROSS_SECTION_PARTS,
   getAssetDef,
   assetRoles,
   selectVariant,

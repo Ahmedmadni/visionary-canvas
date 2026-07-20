@@ -12,6 +12,12 @@
  * from DOM-land. Flagged in docs/scene-01-reference-breakdown.md as a
  * candidate upgrade once the overlay needs to track specific mesh
  * features (e.g. a named ingredient in the exploded shot).
+ *
+ * Content only exists for HERO and TURNAROUND — the shots with a built
+ * visual treatment. `shots.ts` now lists six shots total; the other four
+ * (macro/exploded/material) have camera + timeline scaffolding but no HUD
+ * copy yet (deliberately deferred, not a placeholder). `HudOverlay`
+ * renders nothing for a shot missing from this map, by design.
  */
 
 import type { Scene01ShotId } from "../shots";
@@ -33,7 +39,7 @@ export interface Scene01HudShotContent {
   callouts: readonly HudCallout[];
 }
 
-export const SCENE_01_HUD_CONTENT: Record<Scene01ShotId, Scene01HudShotContent> = {
+export const SCENE_01_HUD_CONTENT: Partial<Record<Scene01ShotId, Scene01HudShotContent>> = {
   hero: {
     tag: "SHAWARMA · 01",
     label: "PRODUCT VIEW",
